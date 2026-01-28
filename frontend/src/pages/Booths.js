@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import apiClient from '../utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Calendar as CalendarIcon, CheckCircle, XCircle } from 'lucide-react';
@@ -200,7 +200,7 @@ export const Booths = () => {
         <DialogContent className="bg-white border-gray-200 text-black max-w-5xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="font-secondary uppercase text-xl">CALENDARIO - {selectedBooth?.name}</DialogTitle>
-            <p className="text-gray-600 font-primary text-sm">Visualización de disponibilidad y reservas</p>
+            <DialogDescription className="text-gray-600 font-primary text-sm">Visualización de disponibilidad y reservas</DialogDescription>
           </DialogHeader>
           <div className="mt-4" style={{ height: '600px' }}>
             <Calendar
@@ -261,7 +261,7 @@ export const Booths = () => {
         <DialogContent className="bg-white border-gray-200 text-black">
           <DialogHeader>
             <DialogTitle className="font-secondary uppercase text-xl">NUEVA RESERVA</DialogTitle>
-            <p className="text-gray-600 font-primary text-sm">{selectedBooth?.name}</p>
+            <DialogDescription className="text-gray-600 font-primary text-sm">{selectedBooth?.name}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleBookingSubmit} className="space-y-4 mt-4">
             <div>

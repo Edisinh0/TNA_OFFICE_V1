@@ -6,5 +6,14 @@ module.exports = {
       '@': path.resolve(__dirname, 'src'),
     },
   },
-
+  babel: {
+    presets: [
+      [
+        '@babel/preset-react',
+        {
+          runtime: 'automatic',
+        },
+      ],
+    ],
+  },
 };

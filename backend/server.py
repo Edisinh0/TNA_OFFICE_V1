@@ -520,6 +520,36 @@ class TicketUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
 
+class BookingCreate(BaseModel):
+    resource_type: str
+    resource_id: str
+    resource_name: str
+    client_id: Optional[str] = None
+    client_name: str
+    client_email: Optional[str] = None
+    client_phone: Optional[str] = None
+    date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    total_price: Optional[float] = 0.0
+    status: Optional[str] = "pending"
+    notes: Optional[str] = None
+
+class BookingUpdate(BaseModel):
+    resource_type: Optional[str] = None
+    resource_id: Optional[str] = None
+    resource_name: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    client_phone: Optional[str] = None
+    date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    total_price: Optional[float] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
 # ============ SECURITY ============
 
 security = HTTPBearer()
@@ -605,6 +635,23 @@ def parse_date(date_str: Optional[str]) -> Optional[date]:
         return datetime.strptime(date_str, '%Y-%m-%d').date()
     except Exception as e:
         logger.warning(f"Error parseando fecha '{date_str}': {e}")
+        return None
+
+def parse_time(time_str: Optional[str]) -> Optional[time]:
+    """Parsea una hora string a objeto time (formato: HH:MM o HH:MM:SS)"""
+    if not time_str:
+        return None
+    try:
+        if 'T' in time_str:  # ISO format
+            return datetime.fromisoformat(time_str).time()
+        # Intenta con HH:MM:SS
+        try:
+            return datetime.strptime(time_str, '%H:%M:%S').time()
+        except:
+            # Si falla, intenta con HH:MM
+            return datetime.strptime(time_str, '%H:%M').time()
+    except Exception as e:
+        logger.warning(f"Error parseando hora '{time_str}': {e}")
         return None
 
 # ============ APP SETUP ============
@@ -1225,42 +1272,78 @@ def get_bookings(db: Session = Depends(get_db), current_user: UserDB = Depends(g
     return [db_to_dict(b) for b in bookings]
 
 @api_router.post("/bookings")
-def create_booking(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    booking = BookingDB(
-        id=str(uuid.uuid4()),
-        resource_type=data.get('resource_type'),
-        resource_id=data.get('resource_id'),
-        resource_name=data.get('resource_name'),
-        client_id=data.get('client_id'),
-        client_name=data.get('client_name'),
-        client_email=data.get('client_email'),
-        client_phone=data.get('client_phone'),
-        date=parse_date(data.get('date')),
-        start_time=data.get('start_time'),
-        end_time=data.get('end_time'),
-        status=data.get('status', 'pending'),
-        total_price=data.get('total_price', 0),
-        notes=data.get('notes'),
-        created_by=current_user.id
-    )
-    db.add(booking)
-    db.commit()
-    return db_to_dict(booking)
+def create_booking(data: BookingCreate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    try:
+        booking = BookingDB(
+            id=str(uuid.uuid4()),
+            resource_type=data.resource_type,
+            resource_id=data.resource_id,
+            resource_name=data.resource_name,
+            client_id=data.client_id,
+            client_name=data.client_name,
+            client_email=data.client_email,
+            client_phone=data.client_phone,
+            date=parse_date(data.date),
+            start_time=parse_time(data.start_time),
+            end_time=parse_time(data.end_time),
+            status=data.status,
+            total_price=data.total_price,
+            notes=data.notes,
+            created_by=current_user.id
+        )
+        db.add(booking)
+        db.commit()
+        db.refresh(booking)
+        return db_to_dict(booking)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creando booking: {e}")
+        raise HTTPException(status_code=500, detail=f"Error creando reserva: {str(e)}")
 
 @api_router.put("/bookings/{booking_id}")
-def update_booking(booking_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+def update_booking(booking_id: str, data: BookingUpdate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    try:
+        booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Reserva no encontrada")
 
-    for key, value in data.items():
-        if hasattr(booking, key) and key != 'id':
-            if key == 'date':
-                value = parse_date(value)
-            setattr(booking, key, value)
+        # Actualizar solo los campos que fueron proporcionados
+        if data.resource_type is not None:
+            booking.resource_type = data.resource_type
+        if data.resource_id is not None:
+            booking.resource_id = data.resource_id
+        if data.resource_name is not None:
+            booking.resource_name = data.resource_name
+        if data.client_id is not None:
+            booking.client_id = data.client_id
+        if data.client_name is not None:
+            booking.client_name = data.client_name
+        if data.client_email is not None:
+            booking.client_email = data.client_email
+        if data.client_phone is not None:
+            booking.client_phone = data.client_phone
+        if data.date is not None:
+            booking.date = parse_date(data.date)
+        if data.start_time is not None:
+            booking.start_time = parse_time(data.start_time)
+        if data.end_time is not None:
+            booking.end_time = parse_time(data.end_time)
+        if data.total_price is not None:
+            booking.total_price = data.total_price
+        if data.status is not None:
+            booking.status = data.status
+        if data.notes is not None:
+            booking.notes = data.notes
 
-    db.commit()
-    return db_to_dict(booking)
+        db.commit()
+        db.refresh(booking)
+        return db_to_dict(booking)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error actualizando booking: {e}")
+        raise HTTPException(status_code=500, detail=f"Error actualizando reserva: {str(e)}")
 
 @api_router.delete("/bookings/{booking_id}")
 def delete_booking(booking_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
