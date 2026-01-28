@@ -1,10 +1,39 @@
+# ==============================================
+# TNA Office API - Dependencias Python
+# ==============================================
+# Instalacion: pip install -r requirements.txt
+# ==============================================
+
+# Framework Web
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
+
+# Validacion de datos
 pydantic[email]>=2.10.0
+
+# Autenticacion JWT
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 PyJWT>=2.8.0
+
+# Manejo de formularios multipart
 python-multipart>=0.0.6
+
+# ORM y Base de Datos
 SQLAlchemy>=2.0.25
 PyMySQL>=1.1.0
+
+# Seguridad y cifrado
 cryptography>=42.0.0
+
+# Variables de entorno
+python-dotenv>=1.0.0
+
+# Adaptador ASGI a WSGI para Phusion Passenger (cPanel)
+a2wsgi>=1.10.0
+
+# Generacion de reportes Excel/CSV
+openpyxl>=3.1.2
+
+# Utilidades de fecha/hora
+python-dateutil>=2.8.2

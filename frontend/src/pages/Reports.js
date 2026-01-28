@@ -1,40 +1,45 @@
+/**
+ * TNA Office - Pagina de Reportes
+ *
+ * Permite descargar reportes de ventas y comisiones en formato Excel/CSV.
+ * Utiliza el apiClient centralizado para todas las peticiones.
+ */
+
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAuthHeader } from '../utils/auth';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { useState } from 'react';
+import { downloadFile } from '../utils/api';
 
 export const Reports = () => {
+  const [downloading, setDownloading] = useState(null);
+
+  /**
+   * Descarga un reporte usando el cliente API centralizado
+   * @param {string} type - Tipo de reporte ('sales' o 'commissions')
+   */
   const downloadReport = async (type) => {
+    setDownloading(type);
     try {
-      const authHeader = getAuthHeader();
-      const response = await fetch(`${API}/reports/${type}/excel`, {
-        method: 'GET',
-        headers: {
-          ...authHeader
-        }
-      });
+      const filename = type === 'sales'
+        ? 'ventas_tna_office.xlsx'
+        : 'comisiones_tna_office.xlsx';
 
-      if (!response.ok) {
-        throw new Error('Error al descargar reporte');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = type === 'sales' ? 'ventas_tna_office.xlsx' : 'comisiones_tna_office.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
+      await downloadFile(`/reports/${type}/excel`, filename);
       toast.success('Reporte descargado exitosamente');
     } catch (error) {
-      toast.error('Error al descargar reporte');
+      console.error('[Reports] Error descargando reporte:', error);
+
+      if (error.response?.status === 404) {
+        toast.error('El endpoint de reportes no esta disponible');
+      } else if (error.response?.status === 500) {
+        toast.error('Error del servidor al generar el reporte');
+      } else {
+        toast.error('Error al descargar reporte. Intenta nuevamente.');
+      }
+    } finally {
+      setDownloading(null);
     }
   };
 
@@ -57,22 +62,32 @@ export const Reports = () => {
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
             <p className="text-gray-600 font-primary text-sm">
-              Exporta el historial completo de ventas incluyendo productos, categorías, cantidades, precios, comisiones y clientes.
+              Exporta el historial completo de ventas incluyendo productos, categorias, cantidades, precios, comisiones y clientes.
             </p>
             <div className="space-y-2">
               <div className="text-gray-500 text-xs font-primary">• Fecha de venta</div>
-              <div className="text-gray-500 text-xs font-primary">• Producto y categoría</div>
+              <div className="text-gray-500 text-xs font-primary">• Producto y categoria</div>
               <div className="text-gray-500 text-xs font-primary">• Cantidad y precios</div>
-              <div className="text-gray-500 text-xs font-primary">• Comisión y comisionista</div>
-              <div className="text-gray-500 text-xs font-primary">• Información del cliente</div>
+              <div className="text-gray-500 text-xs font-primary">• Comision y comisionista</div>
+              <div className="text-gray-500 text-xs font-primary">• Informacion del cliente</div>
             </div>
             <Button
               data-testid="download-sales-report"
               onClick={() => downloadReport('sales')}
-              className="w-full bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide font-secondary"
+              disabled={downloading !== null}
+              className="w-full bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide font-secondary disabled:opacity-50"
             >
-              <Download className="w-4 h-4 mr-2" />
-              DESCARGAR EXCEL
+              {downloading === 'sales' ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  DESCARGANDO...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  DESCARGAR EXCEL
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -98,10 +113,20 @@ export const Reports = () => {
             <Button
               data-testid="download-commissions-report"
               onClick={() => downloadReport('commissions')}
-              className="w-full bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide font-secondary"
+              disabled={downloading !== null}
+              className="w-full bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide font-secondary disabled:opacity-50"
             >
-              <Download className="w-4 h-4 mr-2" />
-              DESCARGAR EXCEL
+              {downloading === 'commissions' ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  DESCARGANDO...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  DESCARGAR EXCEL
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -109,13 +134,13 @@ export const Reports = () => {
 
       <Card className="bg-white border-gray-200 rounded-sm">
         <CardHeader className="border-b border-gray-200">
-          <CardTitle className="font-secondary uppercase text-black">INFORMACIÓN</CardTitle>
+          <CardTitle className="font-secondary uppercase text-black">INFORMACION</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
           <div className="space-y-3 text-sm font-primary text-gray-600">
             <p>• Los reportes se generan con los datos actuales del sistema.</p>
             <p>• Los archivos Excel son compatibles con Microsoft Excel, Google Sheets y LibreOffice.</p>
-            <p>• Los reportes incluyen únicamente los registros activos.</p>
+            <p>• Los reportes incluyen unicamente los registros activos.</p>
             <p>• Para reportes personalizados, contacta al administrador del sistema.</p>
           </div>
         </CardContent>

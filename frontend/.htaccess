@@ -1,0 +1,92 @@
+# ==============================================
+# TNA Office Frontend - Configuracion Apache
+# ==============================================
+# Este archivo configura React Router para funcionar
+# correctamente en un servidor Apache (cPanel)
+# ==============================================
+
+# Habilitar motor de reescritura
+RewriteEngine On
+
+# Configurar la base del directorio
+# Si el frontend esta en un subdirectorio, ajustar esta linea
+# Ejemplo: RewriteBase /app/ si esta en tu-dominio.com/app/
+RewriteBase /
+
+# No reescribir archivos y directorios existentes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Redirigir todas las rutas al index.html (SPA)
+RewriteRule ^ index.html [L]
+
+# ==============================================
+# Configuracion de cache y compresion
+# ==============================================
+
+# Habilitar compresion GZIP
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css application/javascript application/json
+</IfModule>
+
+# Cache de archivos estaticos
+<IfModule mod_expires.c>
+    ExpiresActive On
+
+    # Imagenes - 1 semana
+    ExpiresByType image/jpeg "access plus 1 week"
+    ExpiresByType image/png "access plus 1 week"
+    ExpiresByType image/gif "access plus 1 week"
+    ExpiresByType image/webp "access plus 1 week"
+    ExpiresByType image/svg+xml "access plus 1 week"
+    ExpiresByType image/x-icon "access plus 1 week"
+
+    # CSS y JavaScript - 1 semana (Vite genera hashes unicos)
+    ExpiresByType text/css "access plus 1 week"
+    ExpiresByType application/javascript "access plus 1 week"
+
+    # Fuentes - 1 mes
+    ExpiresByType font/woff "access plus 1 month"
+    ExpiresByType font/woff2 "access plus 1 month"
+    ExpiresByType application/font-woff "access plus 1 month"
+    ExpiresByType application/font-woff2 "access plus 1 month"
+
+    # HTML - no cache (siempre fresco)
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+# ==============================================
+# Headers de seguridad
+# ==============================================
+
+<IfModule mod_headers.c>
+    # Prevenir clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Prevenir MIME type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+
+    # XSS Protection
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ==============================================
+# Tipos MIME adicionales
+# ==============================================
+
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType application/json .json
+    AddType image/webp .webp
+    AddType font/woff .woff
+    AddType font/woff2 .woff2
+</IfModule>
+
+# ==============================================
+# Manejo de errores
+# ==============================================
+
+ErrorDocument 404 /index.html

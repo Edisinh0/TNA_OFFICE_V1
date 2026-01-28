@@ -1,32 +1,63 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+"""
+TNA Office API - Backend FastAPI Completo
+Versión: 2.0.0 - Corregido para Producción
+Compatibilidad: cPanel con Phusion Passenger
+"""
+
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
+from typing import Optional, List, Any
+from datetime import datetime, timezone, timedelta, date, time
 import bcrypt
 import jwt
 import uuid
 import os
+import enum
+import io
+import logging
 from contextlib import asynccontextmanager
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Text, DateTime, Date, Time, Enum, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Text, DateTime, Date, Time, Enum, JSON, ForeignKey, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.pool import QueuePool
-import enum
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load .env file
+# ============ CONFIGURACIÓN DE LOGGING ============
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ============ CARGAR VARIABLES DE ENTORNO ============
+
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+env_path = ROOT_DIR / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+    logger.info(f"Archivo .env cargado desde: {env_path}")
+else:
+    logger.warning(f"Archivo .env no encontrado en: {env_path}")
 
 # ============ CONFIGURACIÓN ============
 
-DATABASE_URL = os.environ.get('DATABASE_URL', 'mysql+pymysql://root@localhost:3306/tna_office_db')
-JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production-2024')
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("ERROR: La variable DATABASE_URL no está configurada en .env")
+
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET or JWT_SECRET == 'cambia-esto-por-una-clave-muy-segura-y-larga':
+    logger.warning("ADVERTENCIA: JWT_SECRET no está configurado o usa el valor por defecto. Cambiar en producción.")
+    JWT_SECRET = 'tna-office-default-secret-change-in-production'
+
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
+JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24))
 
 # ============ DATABASE SETUP ============
 
@@ -35,7 +66,9 @@ engine = create_engine(
     poolclass=QueuePool,
     pool_size=5,
     max_overflow=10,
-    pool_recycle=3600
+    pool_recycle=3600,
+    pool_pre_ping=True,  # Verifica conexiones antes de usarlas
+    echo=False  # Cambiar a True para debug SQL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -44,6 +77,10 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        logger.error(f"Error en sesión de base de datos: {e}")
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -67,7 +104,6 @@ class BookingStatus(str, enum.Enum):
 
 class TicketStatus(str, enum.Enum):
     pending = "pending"
-    in_progress = "in_progress"
     completed = "completed"
     cancelled = "cancelled"
 
@@ -75,8 +111,14 @@ class PaymentStatus(str, enum.Enum):
     pending = "pending"
     partial = "partial"
     paid = "paid"
+    refunded = "refunded"
+
+class CommissionStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
 
 class RequestStatus(str, enum.Enum):
+    new = "new"
     pending = "pending"
     in_progress = "in_progress"
     completed = "completed"
@@ -90,15 +132,6 @@ class ServiceStatus(str, enum.Enum):
 class ParkingType(str, enum.Enum):
     parking = "parking"
     storage = "storage"
-
-class ResourceType(str, enum.Enum):
-    room = "room"
-    booth = "booth"
-
-class DurationType(str, enum.Enum):
-    hourly = "hourly"
-    half_day = "half_day"
-    full_day = "full_day"
 
 # ============ SQLALCHEMY MODELS ============
 
@@ -120,6 +153,7 @@ class UserDB(Base):
     role = Column(Enum(UserRole), default=UserRole.cliente)
     profile_id = Column(String(36), ForeignKey('profiles.id'))
     commission_percentage = Column(Float, default=0.0)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     profile = relationship("ProfileDB")
 
@@ -129,6 +163,7 @@ class CategoryDB(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     parent_id = Column(String(36), ForeignKey('categories.id'))
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class ProductDB(Base):
@@ -137,7 +172,10 @@ class ProductDB(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     category_id = Column(String(36), ForeignKey('categories.id'))
+    category = Column(String(100))
     base_price = Column(Float, default=0.0)
+    sale_price = Column(Float, default=0.0)
+    cost = Column(Float, default=0.0)
     unit = Column(String(50))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -239,6 +277,7 @@ class BookingDB(Base):
     resource_type = Column(Enum('room', 'booth', name='resource_type_enum'), nullable=False)
     resource_id = Column(String(36), nullable=False)
     resource_name = Column(String(100))
+    client_id = Column(String(36))
     client_name = Column(String(255), nullable=False)
     client_email = Column(String(255))
     client_phone = Column(String(50))
@@ -249,6 +288,8 @@ class BookingDB(Base):
     total_price = Column(Float, default=0.0)
     status = Column(Enum('pending', 'confirmed', 'cancelled', 'completed', name='booking_status_enum'), default='pending')
     notes = Column(Text)
+    created_by = Column(String(36))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class MonthlyServiceCatalogDB(Base):
     __tablename__ = "monthly_services_catalog"
@@ -257,6 +298,7 @@ class MonthlyServiceCatalogDB(Base):
     description = Column(Text)
     category = Column(String(100))
     base_price_uf = Column(Float, default=0.0)
+    sale_value_uf = Column(Float, default=0.0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -275,48 +317,70 @@ class MonthlyServiceDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     client = relationship("ClientDB")
 
-# NOTA: Las tablas tickets y ticket_items NO EXISTEN en la base de datos
-# class TicketDB(Base):
-#     __tablename__ = "tickets"
-#     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-#     ticket_number = Column(String(50))
-#     client_id = Column(String(36), ForeignKey('clients.id'))
-#     client_name = Column(String(255))
-#     status = Column(Enum(TicketStatus), default=TicketStatus.pending)
-#     payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.pending)
-#     subtotal = Column(Float, default=0.0)
-#     tax = Column(Float, default=0.0)
-#     total = Column(Float, default=0.0)
-#     notes = Column(Text)
-#     comisionista_id = Column(String(36))
-#     created_by = Column(String(36))
-#     created_at = Column(DateTime, default=datetime.utcnow)
-#     items = relationship("TicketItemDB", back_populates="ticket", cascade="all, delete-orphan")
-#     client = relationship("ClientDB")
+# ============ MODELOS DE TICKETS (ACTIVADOS) ============
 
-# class TicketItemDB(Base):
-#     __tablename__ = "ticket_items"
-#     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-#     ticket_id = Column(String(36), ForeignKey('tickets.id'), nullable=False)
-#     product_id = Column(String(36))
-#     product_name = Column(String(255))
-#     description = Column(Text)
-#     quantity = Column(Integer, default=1)
-#     unit_price = Column(Float, default=0.0)
-#     total = Column(Float, default=0.0)
-#     ticket = relationship("TicketDB", back_populates="items")
+class TicketDB(Base):
+    __tablename__ = "tickets"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    ticket_number = Column(Integer, autoincrement=True, unique=True)
+    client_id = Column(String(36), ForeignKey('clients.id'))
+    client_name = Column(String(255), nullable=False)
+    client_email = Column(String(255))
+    ticket_date = Column(DateTime, default=datetime.utcnow)
+    subtotal = Column(Float, default=0.0)
+    tax = Column(Float, default=0.0)
+    total_amount = Column(Float, default=0.0)
+    total_commission = Column(Float, default=0.0)
+    comisionista_id = Column(String(36), ForeignKey('users.id'))
+    comisionista_name = Column(String(255))
+    payment_status = Column(Enum('pending', 'paid', 'partial', 'refunded', name='payment_status_enum'), default='pending')
+    payment_method = Column(String(50))
+    payment_date = Column(DateTime)
+    commission_status = Column(Enum('pending', 'paid', name='commission_status_enum'), default='pending')
+    commission_paid_date = Column(DateTime)
+    status = Column(Enum('pending', 'completed', 'cancelled', name='ticket_status_enum'), default='pending')
+    notes = Column(Text)
+    created_by = Column(String(36), ForeignKey('users.id'))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    items = relationship("TicketItemDB", back_populates="ticket", cascade="all, delete-orphan")
+    client = relationship("ClientDB")
+    comisionista = relationship("UserDB", foreign_keys=[comisionista_id])
+
+class TicketItemDB(Base):
+    __tablename__ = "ticket_items"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    ticket_id = Column(String(36), ForeignKey('tickets.id'), nullable=False)
+    product_id = Column(String(36), ForeignKey('products.id'))
+    product_name = Column(String(255), nullable=False)
+    category = Column(String(100))
+    description = Column(Text)
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0.0)
+    subtotal = Column(Float, default=0.0)
+    commission_percentage = Column(Float, default=0.0)
+    commission_amount = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    ticket = relationship("TicketDB", back_populates="items")
+    product = relationship("ProductDB")
 
 class RequestDB(Base):
     __tablename__ = "requests"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     request_number = Column(Integer, autoincrement=True, unique=True)
+    type = Column(String(50), default='contact')
+    name = Column(String(255))
     client_name = Column(String(255))
     client_email = Column(String(255))
+    email = Column(String(255))
     client_phone = Column(String(50))
+    phone = Column(String(50))
+    company = Column(String(255))
     company_name = Column(String(255))
+    message = Column(Text)
     request_type = Column(String(100))
     description = Column(Text)
-    status = Column(Enum('pending', 'in_progress', 'completed', 'cancelled', name='request_status_enum'), default='pending')
+    source = Column(String(50))
+    status = Column(Enum('new', 'pending', 'in_progress', 'completed', 'cancelled', name='request_status_enum'), default='new')
     priority = Column(Enum('low', 'medium', 'high', name='request_priority_enum'), default='medium')
     assigned_to = Column(String(36))
     notes = Column(Text)
@@ -327,6 +391,7 @@ class QuoteDB(Base):
     __tablename__ = "quotes"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     quote_number = Column(Integer, autoincrement=True, unique=True)
+    client_id = Column(String(36), ForeignKey('clients.id'))
     client_name = Column(String(255))
     client_email = Column(String(255))
     client_phone = Column(String(50))
@@ -335,25 +400,11 @@ class QuoteDB(Base):
     subtotal = Column(Float, default=0.0)
     tax = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
-    status = Column(Enum('draft', 'sent', 'accepted', 'rejected', 'expired', name='quote_status_enum'), default='draft')
+    status = Column(Enum('draft', 'pre-cotizacion', 'sent', 'accepted', 'rejected', 'expired', name='quote_status_enum'), default='draft')
     valid_until = Column(Date)
     notes = Column(Text)
     created_by = Column(String(36))
     created_at = Column(DateTime, default=datetime.utcnow)
-
-# NOTA: La tabla quote_items NO EXISTE en la base de datos
-# Los items de las cotizaciones se almacenan como JSON en la columna 'items' de la tabla 'quotes'
-# class QuoteItemDB(Base):
-#     __tablename__ = "quote_items"
-#     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-#     quote_id = Column(String(36), ForeignKey('quotes.id'), nullable=False)
-#     product_id = Column(String(36))
-#     product_name = Column(String(255))
-#     description = Column(Text)
-#     quantity = Column(Integer, default=1)
-#     unit_price = Column(Float, default=0.0)
-#     total = Column(Float, default=0.0)
-#     quote = relationship("QuoteDB", back_populates="items")
 
 class QuoteTemplateDB(Base):
     __tablename__ = "quote_templates"
@@ -370,12 +421,22 @@ class SaleDB(Base):
     ticket_id = Column(String(36))
     product_id = Column(String(36))
     product_name = Column(String(255))
+    category = Column(String(100))
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0.0)
-    total = Column(Float, default=0.0)
+    total_amount = Column(Float, default=0.0)
     sale_date = Column(Date)
+    client_id = Column(String(36))
+    client_name = Column(String(255))
+    client_email = Column(String(255))
     comisionista_id = Column(String(36))
+    comisionista_name = Column(String(255))
+    commission_percentage = Column(Float, default=0.0)
     commission_amount = Column(Float, default=0.0)
+    payment_status = Column(String(20), default='pending')
+    commission_status = Column(String(20), default='pending')
+    notes = Column(Text)
+    created_by = Column(String(36))
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class FloorPlanCoordinateDB(Base):
@@ -393,14 +454,18 @@ class InvoiceDB(Base):
     __tablename__ = "invoices"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     invoice_number = Column(String(50))
-    ticket_id = Column(String(36), ForeignKey('tickets.id'))
+    ticket_id = Column(String(36))
     client_id = Column(String(36), ForeignKey('clients.id'))
+    client_name = Column(String(255))
+    items = Column(JSON)
+    sales_ids = Column(JSON)
     issue_date = Column(Date)
     due_date = Column(Date)
     subtotal = Column(Float, default=0.0)
     tax = Column(Float, default=0.0)
-    total = Column(Float, default=0.0)
-    status = Column(String(50), default='draft')
+    total_amount = Column(Float, default=0.0)
+    status = Column(String(50), default='pending')
+    invoiced_at = Column(DateTime)
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -436,46 +501,77 @@ class ProfileUpdate(BaseModel):
     description: Optional[str] = None
     allowed_modules: Optional[List[str]] = None
 
+class TicketCreate(BaseModel):
+    items: List[dict]
+    client_id: Optional[str] = None
+    client_name: str
+    client_email: Optional[str] = None
+    comisionista_id: Optional[str] = None
+    notes: Optional[str] = None
+
+class TicketUpdate(BaseModel):
+    items: Optional[List[dict]] = None
+    client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    comisionista_id: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_method: Optional[str] = None
+    commission_status: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
 # ============ SECURITY ============
 
 security = HTTPBearer()
 
-def verify_password(plain_password, hashed_password):
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica una contraseña contra su hash bcrypt"""
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception as e:
+        logger.error(f"Error verificando contraseña: {e}")
+        return False
 
-def get_password_hash(password):
+def get_password_hash(password: str) -> str:
     """Genera un hash bcrypt para una contraseña"""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-def create_access_token(data: dict):
+def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> UserDB:
     token = credentials.credentials
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("sub")
         if user_id is None:
-            raise HTTPException(status_code=401, detail="Token inválido")
+            raise HTTPException(status_code=401, detail="Token inválido: falta identificador de usuario")
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-    
+        raise HTTPException(status_code=401, detail="Token expirado. Por favor, inicia sesión nuevamente")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")
+
     user = db.query(UserDB).filter(UserDB.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Usuario desactivado")
     return user
+
+def get_optional_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> Optional[UserDB]:
+    """Obtiene el usuario actual si está autenticado, sino retorna None"""
+    try:
+        return get_current_user(credentials, db)
+    except:
+        return None
 
 # ============ HELPER FUNCTIONS ============
 
-def db_to_dict(obj, exclude=None):
+def db_to_dict(obj, exclude: Optional[List[str]] = None) -> dict:
     """Convert SQLAlchemy object to dictionary"""
-    from datetime import date, time, timedelta
     if obj is None:
         return None
     exclude = exclude or []
@@ -499,27 +595,106 @@ def db_to_dict(obj, exclude=None):
             result[column.name] = value
     return result
 
+def parse_date(date_str: Optional[str]) -> Optional[date]:
+    """Parsea una fecha string a objeto date"""
+    if not date_str:
+        return None
+    try:
+        if 'T' in date_str:
+            return datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+        return datetime.strptime(date_str, '%Y-%m-%d').date()
+    except Exception as e:
+        logger.warning(f"Error parseando fecha '{date_str}': {e}")
+        return None
+
 # ============ APP SETUP ============
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create tables
-    # Base.metadata.create_all(bind=engine)  # Comentado: tablas ya existen en la BD
+    # Startup
+    logger.info("Iniciando TNA Office API...")
+    try:
+        # Test database connection
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("Conexión a base de datos verificada")
+    except Exception as e:
+        logger.error(f"Error conectando a la base de datos: {e}")
     yield
     # Shutdown
+    logger.info("Cerrando TNA Office API...")
     engine.dispose()
 
-app = FastAPI(title="TNA Office API - MariaDB", lifespan=lifespan)
+app = FastAPI(
+    title="TNA Office API",
+    description="API para gestión de oficinas TNA Office",
+    version="2.0.0",
+    lifespan=lifespan
+)
 
-# CORS
-cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
+# CORS Configuration
+cors_origins_str = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173')
+cors_origins = [origin.strip() for origin in cors_origins_str.split(',') if origin.strip()]
+
+# Middleware personalizado para manejar CORS en respuestas de error
+class CORSErrorMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            response = await call_next(request)
+            return response
+        except Exception as e:
+            logger.error(f"Error no manejado: {e}")
+            origin = request.headers.get("origin", "")
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Error interno del servidor"}
+            )
+            if origin in cors_origins:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = "*"
+                response.headers["Access-Control-Allow-Headers"] = "*"
+            return response
+
+# Añadir middleware CORS (el orden es importante - este va primero)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins + ['http://localhost:3000'],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Añadir middleware de errores CORS (se ejecuta después del CORS middleware)
+app.add_middleware(CORSErrorMiddleware)
+
+# Exception handler global para asegurar headers CORS en errores HTTP
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Excepción global capturada: {exc}")
+    origin = request.headers.get("origin", "")
+    response = JSONResponse(
+        status_code=500,
+        content={"detail": "Error interno del servidor"}
+    )
+    if origin in cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    origin = request.headers.get("origin", "")
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+    if origin in cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 api_router = APIRouter(prefix="/api")
 
@@ -528,18 +703,22 @@ api_router = APIRouter(prefix="/api")
 @api_router.post("/auth/login")
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(UserDB).filter(UserDB.email == user_data.email).first()
-    if not user or not verify_password(user_data.password, user.password):
+    if not user:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    
+    if not verify_password(user_data.password, user.password):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Usuario desactivado")
+
     token = create_access_token({"sub": user.id})
     user_dict = db_to_dict(user, exclude=['password'])
-    
-    # Add profile info
+
     if user.profile:
         user_dict['allowed_modules'] = user.profile.allowed_modules or []
     else:
         user_dict['allowed_modules'] = []
-    
+
+    logger.info(f"Usuario {user.email} inició sesión exitosamente")
     return {"token": token, "user": user_dict}
 
 @api_router.post("/auth/register")
@@ -547,7 +726,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(UserDB).filter(UserDB.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email ya registrado")
-    
+
     new_user = UserDB(
         id=str(uuid.uuid4()),
         email=user_data.email,
@@ -560,6 +739,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    logger.info(f"Nuevo usuario registrado: {new_user.email}")
     return db_to_dict(new_user, exclude=['password'])
 
 @api_router.get("/auth/me")
@@ -585,8 +765,8 @@ def get_profiles(db: Session = Depends(get_db), current_user: UserDB = Depends(g
 @api_router.post("/profiles")
 def create_profile(data: ProfileCreate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     if current_user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Solo administradores")
-    
+        raise HTTPException(status_code=403, detail="Solo administradores pueden crear perfiles")
+
     profile = ProfileDB(
         id=str(uuid.uuid4()),
         name=data.name,
@@ -600,33 +780,33 @@ def create_profile(data: ProfileCreate, db: Session = Depends(get_db), current_u
 @api_router.put("/profiles/{profile_id}")
 def update_profile(profile_id: str, data: ProfileUpdate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     if current_user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Solo administradores")
-    
+        raise HTTPException(status_code=403, detail="Solo administradores pueden editar perfiles")
+
     profile = db.query(ProfileDB).filter(ProfileDB.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-    
+
     if data.name is not None:
         profile.name = data.name
     if data.description is not None:
         profile.description = data.description
     if data.allowed_modules is not None:
         profile.allowed_modules = data.allowed_modules
-    
+
     db.commit()
     return db_to_dict(profile)
 
 @api_router.delete("/profiles/{profile_id}")
 def delete_profile(profile_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     if current_user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Solo administradores")
-    
+        raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar perfiles")
+
     profile = db.query(ProfileDB).filter(ProfileDB.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     if profile.is_system:
-        raise HTTPException(status_code=400, detail="No se puede eliminar perfil del sistema")
-    
+        raise HTTPException(status_code=400, detail="No se puede eliminar un perfil del sistema")
+
     db.delete(profile)
     db.commit()
     return {"message": "Perfil eliminado"}
@@ -654,8 +834,8 @@ def get_modules(current_user: UserDB = Depends(get_current_user)):
 @api_router.get("/users")
 def get_users(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     if current_user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Solo administradores")
-    
+        raise HTTPException(status_code=403, detail="Solo administradores pueden ver usuarios")
+
     users = db.query(UserDB).all()
     result = []
     for user in users:
@@ -671,7 +851,7 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: UserDB =
     user = db.query(UserDB).filter(UserDB.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
     user_dict = db_to_dict(user, exclude=['password'])
     if user.profile:
         user_dict['profile_name'] = user.profile.name
@@ -682,40 +862,40 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: UserDB =
 
 @api_router.put("/users/{user_id}")
 def update_user(user_id: str, data: UserUpdate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    if current_user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Solo administradores")
-    
+    if current_user.role != 'admin' and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para editar este usuario")
+
     user = db.query(UserDB).filter(UserDB.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
     if data.email is not None:
         user.email = data.email
     if data.name is not None:
         user.name = data.name
-    if data.role is not None:
+    if data.role is not None and current_user.role == 'admin':
         user.role = data.role
-    if data.profile_id is not None:
+    if data.profile_id is not None and current_user.role == 'admin':
         user.profile_id = data.profile_id if data.profile_id else None
     if data.commission_percentage is not None:
         user.commission_percentage = data.commission_percentage
     if data.password:
         user.password = get_password_hash(data.password)
-    
+
     db.commit()
     return db_to_dict(user, exclude=['password'])
 
 @api_router.delete("/users/{user_id}")
 def delete_user(user_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     if current_user.role != 'admin':
-        raise HTTPException(status_code=403, detail="Solo administradores")
+        raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar usuarios")
     if current_user.id == user_id:
-        raise HTTPException(status_code=400, detail="No puedes eliminarte")
-    
+        raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
+
     user = db.query(UserDB).filter(UserDB.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
     db.delete(user)
     db.commit()
     return {"message": "Usuario eliminado"}
@@ -756,7 +936,7 @@ def get_client(client_id: str, db: Session = Depends(get_db), current_user: User
     client = db.query(ClientDB).filter(ClientDB.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    
+
     client_dict = db_to_dict(client)
     client_dict['documents'] = [db_to_dict(d) for d in client.documents]
     return client_dict
@@ -766,11 +946,11 @@ def update_client(client_id: str, data: dict, db: Session = Depends(get_db), cur
     client = db.query(ClientDB).filter(ClientDB.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    
+
     for key, value in data.items():
         if hasattr(client, key) and key != 'id':
             setattr(client, key, value)
-    
+
     db.commit()
     return db_to_dict(client)
 
@@ -779,10 +959,57 @@ def delete_client(client_id: str, db: Session = Depends(get_db), current_user: U
     client = db.query(ClientDB).filter(ClientDB.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    
+
     client.is_active = False
     db.commit()
     return {"message": "Cliente eliminado"}
+
+# ============ CLIENT DOCUMENTS ENDPOINTS ============
+
+@api_router.post("/clients/{client_id}/documents")
+def add_client_document(client_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    client = db.query(ClientDB).filter(ClientDB.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    doc = ClientDocumentDB(
+        id=str(uuid.uuid4()),
+        client_id=client_id,
+        name=data.get('name'),
+        file_url=data.get('file_url'),
+        document_type=data.get('document_type'),
+        expiry_date=parse_date(data.get('expiry_date')),
+        notifications_enabled=data.get('notifications_enabled', False),
+        notification_days=data.get('notification_days', 30)
+    )
+    db.add(doc)
+    db.commit()
+    return db_to_dict(doc)
+
+@api_router.put("/clients/{client_id}/documents/{document_id}")
+def update_client_document(client_id: str, document_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    doc = db.query(ClientDocumentDB).filter(ClientDocumentDB.id == document_id, ClientDocumentDB.client_id == client_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    for key, value in data.items():
+        if hasattr(doc, key) and key != 'id':
+            if key == 'expiry_date':
+                value = parse_date(value)
+            setattr(doc, key, value)
+
+    db.commit()
+    return db_to_dict(doc)
+
+@api_router.delete("/clients/{client_id}/documents/{document_id}")
+def delete_client_document(client_id: str, document_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    doc = db.query(ClientDocumentDB).filter(ClientDocumentDB.id == document_id, ClientDocumentDB.client_id == client_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    db.delete(doc)
+    db.commit()
+    return {"message": "Documento eliminado"}
 
 # ============ OFFICES ENDPOINTS ============
 
@@ -794,6 +1021,12 @@ def get_offices(db: Session = Depends(get_db), current_user: UserDB = Depends(ge
         office_dict = db_to_dict(office)
         if office.client:
             office_dict['client_name'] = office.client.company_name
+        # Calculate margin percentage
+        if office.billed_value_uf and office.billed_value_uf > 0:
+            margin = ((office.billed_value_uf - office.cost_uf) / office.billed_value_uf) * 100
+            office_dict['margin_percentage'] = round(margin, 2)
+        else:
+            office_dict['margin_percentage'] = 0
         result.append(office_dict)
     return result
 
@@ -810,7 +1043,10 @@ def create_office(data: dict, db: Session = Depends(get_db), current_user: UserD
         client_id=data.get('client_id'),
         sale_value_uf=data.get('sale_value_uf', 0),
         billed_value_uf=data.get('billed_value_uf', 0),
-        cost_uf=data.get('cost_uf', 0)
+        cost_uf=data.get('cost_uf', 0),
+        contract_start=parse_date(data.get('contract_start')),
+        contract_end=parse_date(data.get('contract_end')),
+        notes=data.get('notes')
     )
     db.add(office)
     db.commit()
@@ -821,11 +1057,13 @@ def update_office(office_id: str, data: dict, db: Session = Depends(get_db), cur
     office = db.query(OfficeDB).filter(OfficeDB.id == office_id).first()
     if not office:
         raise HTTPException(status_code=404, detail="Oficina no encontrada")
-    
+
     for key, value in data.items():
         if hasattr(office, key) and key != 'id':
+            if key in ['contract_start', 'contract_end']:
+                value = parse_date(value)
             setattr(office, key, value)
-    
+
     db.commit()
     return db_to_dict(office)
 
@@ -834,10 +1072,15 @@ def delete_office(office_id: str, db: Session = Depends(get_db), current_user: U
     office = db.query(OfficeDB).filter(OfficeDB.id == office_id).first()
     if not office:
         raise HTTPException(status_code=404, detail="Oficina no encontrada")
-    
+
     db.delete(office)
     db.commit()
     return {"message": "Oficina eliminada"}
+
+@api_router.get("/offices/public/all")
+def get_public_offices_all(db: Session = Depends(get_db)):
+    offices = db.query(OfficeDB).all()
+    return [db_to_dict(o) for o in offices]
 
 # ============ PARKING STORAGE ENDPOINTS ============
 
@@ -874,11 +1117,11 @@ def update_parking_storage(item_id: str, data: dict, db: Session = Depends(get_d
     item = db.query(ParkingStorageDB).filter(ParkingStorageDB.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
-    
+
     for key, value in data.items():
         if hasattr(item, key) and key != 'id':
             setattr(item, key, value)
-    
+
     db.commit()
     return db_to_dict(item)
 
@@ -887,7 +1130,7 @@ def delete_parking_storage(item_id: str, db: Session = Depends(get_db), current_
     item = db.query(ParkingStorageDB).filter(ParkingStorageDB.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
-    
+
     db.delete(item)
     db.commit()
     return {"message": "Item eliminado"}
@@ -922,11 +1165,11 @@ def update_room(room_id: str, data: dict, db: Session = Depends(get_db), current
     room = db.query(RoomDB).filter(RoomDB.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Sala no encontrada")
-    
+
     for key, value in data.items():
         if hasattr(room, key) and key != 'id':
             setattr(room, key, value)
-    
+
     db.commit()
     return db_to_dict(room)
 
@@ -966,11 +1209,11 @@ def update_booth(booth_id: str, data: dict, db: Session = Depends(get_db), curre
     booth = db.query(BoothDB).filter(BoothDB.id == booth_id).first()
     if not booth:
         raise HTTPException(status_code=404, detail="Caseta no encontrada")
-    
+
     for key, value in data.items():
         if hasattr(booth, key) and key != 'id':
             setattr(booth, key, value)
-    
+
     db.commit()
     return db_to_dict(booth)
 
@@ -990,12 +1233,15 @@ def create_booking(data: dict, db: Session = Depends(get_db), current_user: User
         resource_name=data.get('resource_name'),
         client_id=data.get('client_id'),
         client_name=data.get('client_name'),
-        date=data.get('date'),
+        client_email=data.get('client_email'),
+        client_phone=data.get('client_phone'),
+        date=parse_date(data.get('date')),
         start_time=data.get('start_time'),
         end_time=data.get('end_time'),
         status=data.get('status', 'pending'),
         total_price=data.get('total_price', 0),
-        notes=data.get('notes')
+        notes=data.get('notes'),
+        created_by=current_user.id
     )
     db.add(booking)
     db.commit()
@@ -1006,11 +1252,13 @@ def update_booking(booking_id: str, data: dict, db: Session = Depends(get_db), c
     booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
-    
+
     for key, value in data.items():
         if hasattr(booking, key) and key != 'id':
+            if key == 'date':
+                value = parse_date(value)
             setattr(booking, key, value)
-    
+
     db.commit()
     return db_to_dict(booking)
 
@@ -1019,10 +1267,19 @@ def delete_booking(booking_id: str, db: Session = Depends(get_db), current_user:
     booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
-    
+
     db.delete(booking)
     db.commit()
     return {"message": "Reserva eliminada"}
+
+@api_router.get("/bookings/public/{resource_type}/{resource_id}")
+def get_public_bookings(resource_type: str, resource_id: str, db: Session = Depends(get_db)):
+    bookings = db.query(BookingDB).filter(
+        BookingDB.resource_type == resource_type,
+        BookingDB.resource_id == resource_id,
+        BookingDB.status != 'cancelled'
+    ).all()
+    return [db_to_dict(b) for b in bookings]
 
 # ============ PRODUCTS ENDPOINTS ============
 
@@ -1038,7 +1295,10 @@ def create_product(data: dict, db: Session = Depends(get_db), current_user: User
         name=data.get('name'),
         description=data.get('description'),
         category_id=data.get('category_id'),
+        category=data.get('category'),
         base_price=data.get('base_price', 0),
+        sale_price=data.get('sale_price') or data.get('base_price', 0),
+        cost=data.get('cost', 0),
         unit=data.get('unit')
     )
     db.add(product)
@@ -1050,11 +1310,11 @@ def update_product(product_id: str, data: dict, db: Session = Depends(get_db), c
     product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    
+
     for key, value in data.items():
         if hasattr(product, key) and key != 'id':
             setattr(product, key, value)
-    
+
     db.commit()
     return db_to_dict(product)
 
@@ -1063,10 +1323,15 @@ def delete_product(product_id: str, db: Session = Depends(get_db), current_user:
     product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    
+
     product.is_active = False
     db.commit()
     return {"message": "Producto eliminado"}
+
+@api_router.get("/products/public")
+def get_public_products(db: Session = Depends(get_db)):
+    products = db.query(ProductDB).filter(ProductDB.is_active == True).all()
+    return [db_to_dict(p) for p in products]
 
 # ============ CATEGORIES ENDPOINTS ============
 
@@ -1086,6 +1351,11 @@ def create_category(data: dict, db: Session = Depends(get_db), current_user: Use
     db.add(category)
     db.commit()
     return db_to_dict(category)
+
+@api_router.get("/categories/public")
+def get_public_categories(db: Session = Depends(get_db)):
+    categories = db.query(CategoryDB).all()
+    return [db_to_dict(c) for c in categories]
 
 # ============ MONTHLY SERVICES ENDPOINTS ============
 
@@ -1111,7 +1381,7 @@ def create_monthly_service(data: dict, db: Session = Depends(get_db), current_us
         billed_value_uf=data.get('billed_value_uf', 0),
         cost_uf=data.get('cost_uf', 0),
         status=data.get('status', 'active'),
-        start_date=data.get('start_date'),
+        start_date=parse_date(data.get('start_date')),
         notes=data.get('notes')
     )
     db.add(service)
@@ -1123,11 +1393,13 @@ def update_monthly_service(service_id: str, data: dict, db: Session = Depends(ge
     service = db.query(MonthlyServiceDB).filter(MonthlyServiceDB.id == service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Servicio no encontrado")
-    
+
     for key, value in data.items():
         if hasattr(service, key) and key != 'id':
+            if key == 'start_date':
+                value = parse_date(value)
             setattr(service, key, value)
-    
+
     db.commit()
     return db_to_dict(service)
 
@@ -1136,7 +1408,7 @@ def delete_monthly_service(service_id: str, db: Session = Depends(get_db), curre
     service = db.query(MonthlyServiceDB).filter(MonthlyServiceDB.id == service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Servicio no encontrado")
-    
+
     db.delete(service)
     db.commit()
     return {"message": "Servicio eliminado"}
@@ -1146,64 +1418,271 @@ def get_monthly_services_catalog(db: Session = Depends(get_db), current_user: Us
     catalog = db.query(MonthlyServiceCatalogDB).filter(MonthlyServiceCatalogDB.is_active == True).all()
     return [db_to_dict(c) for c in catalog]
 
-# ============ TICKETS ENDPOINTS ============
-# NOTA: Los endpoints de tickets están deshabilitados porque la tabla 'tickets' no existe en la BD
+# ============ TICKETS ENDPOINTS (COMPLETOS) ============
 
 @api_router.get("/tickets")
 def get_tickets(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    # La tabla tickets no existe en la base de datos
-    return []
+    """Obtiene todos los tickets con sus items"""
+    try:
+        tickets = db.query(TicketDB).order_by(TicketDB.ticket_date.desc()).all()
+        result = []
+        for ticket in tickets:
+            ticket_dict = db_to_dict(ticket)
+            ticket_dict['items'] = [db_to_dict(item) for item in ticket.items]
+            result.append(ticket_dict)
+        return result
+    except Exception as e:
+        logger.error(f"Error obteniendo tickets: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener tickets: {str(e)}")
 
-# @api_router.post("/tickets")
-# def create_ticket(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-#     ticket = TicketDB(
-#         id=str(uuid.uuid4()),
-#         ticket_number=data.get('ticket_number', f"TKT-{datetime.now().strftime('%Y%m%d%H%M%S')}"),
-#         client_id=data.get('client_id'),
-#         client_name=data.get('client_name'),
-#         status=data.get('status', 'pending'),
-#         payment_status=data.get('payment_status', 'pending'),
-#         subtotal=data.get('subtotal', 0),
-#         tax=data.get('tax', 0),
-#         total=data.get('total', 0),
-#         notes=data.get('notes'),
-#         comisionista_id=data.get('comisionista_id'),
-#         created_by=current_user.id
-#     )
-#     db.add(ticket)
-#
-#     # Add items
-#     for item_data in data.get('items', []):
-#         item = TicketItemDB(
-#             id=str(uuid.uuid4()),
-#             ticket_id=ticket.id,
-#             product_id=item_data.get('product_id'),
-#             product_name=item_data.get('product_name'),
-#             description=item_data.get('description'),
-#             quantity=item_data.get('quantity', 1),
-#             unit_price=item_data.get('unit_price', 0),
-#             total=item_data.get('total', 0)
-#         )
-#         db.add(item)
-#
-#     db.commit()
-#
-#     ticket_dict = db_to_dict(ticket)
-#     ticket_dict['items'] = [db_to_dict(i) for i in ticket.items]
-#     return ticket_dict
+@api_router.get("/tickets/{ticket_id}")
+def get_ticket(ticket_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Obtiene un ticket específico por ID"""
+    ticket = db.query(TicketDB).filter(TicketDB.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
 
-# @api_router.put("/tickets/{ticket_id}")
-# def update_ticket(ticket_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-#     ticket = db.query(TicketDB).filter(TicketDB.id == ticket_id).first()
-#     if not ticket:
-#         raise HTTPException(status_code=404, detail="Ticket no encontrado")
-#
-#     for key, value in data.items():
-#         if hasattr(ticket, key) and key not in ['id', 'items']:
-#             setattr(ticket, key, value)
-#
-#     db.commit()
-#     return db_to_dict(ticket)
+    ticket_dict = db_to_dict(ticket)
+    ticket_dict['items'] = [db_to_dict(item) for item in ticket.items]
+    return ticket_dict
+
+@api_router.post("/tickets")
+def create_ticket(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Crea un nuevo ticket de venta"""
+    try:
+        # Validate required fields
+        if not data.get('items') or len(data.get('items', [])) == 0:
+            raise HTTPException(status_code=400, detail="El ticket debe tener al menos un item")
+
+        client_name = data.get('client_name', '').strip()
+        if not client_name:
+            raise HTTPException(status_code=400, detail="El nombre del cliente es requerido")
+
+        # Get comisionista info if provided
+        comisionista_name = None
+        commission_percentage = 0.0
+        if data.get('comisionista_id'):
+            comisionista = db.query(UserDB).filter(UserDB.id == data['comisionista_id']).first()
+            if comisionista:
+                comisionista_name = comisionista.name
+                commission_percentage = comisionista.commission_percentage or 0.0
+
+        # Create ticket
+        ticket = TicketDB(
+            id=str(uuid.uuid4()),
+            client_id=data.get('client_id'),
+            client_name=client_name,
+            client_email=data.get('client_email', ''),
+            comisionista_id=data.get('comisionista_id'),
+            comisionista_name=comisionista_name,
+            notes=data.get('notes', ''),
+            created_by=current_user.id
+        )
+        db.add(ticket)
+        db.flush()  # Get ticket ID
+
+        # Process items
+        total_amount = 0.0
+        total_commission = 0.0
+
+        for item_data in data.get('items', []):
+            product_id = item_data.get('product_id')
+            quantity = int(item_data.get('quantity', 1))
+
+            # Get product info
+            product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
+            if product:
+                unit_price = product.sale_price or product.base_price or 0
+                product_name = product.name
+                category = product.category or ''
+            else:
+                unit_price = float(item_data.get('unit_price', 0))
+                product_name = item_data.get('product_name', 'Producto')
+                category = item_data.get('category', '')
+
+            subtotal = quantity * unit_price
+            commission_amount = subtotal * (commission_percentage / 100)
+
+            ticket_item = TicketItemDB(
+                id=str(uuid.uuid4()),
+                ticket_id=ticket.id,
+                product_id=product_id,
+                product_name=product_name,
+                category=category,
+                quantity=quantity,
+                unit_price=unit_price,
+                subtotal=subtotal,
+                commission_percentage=commission_percentage,
+                commission_amount=commission_amount
+            )
+            db.add(ticket_item)
+
+            total_amount += subtotal
+            total_commission += commission_amount
+
+        # Update ticket totals
+        ticket.total_amount = total_amount
+        ticket.total_commission = total_commission
+
+        db.commit()
+        db.refresh(ticket)
+
+        ticket_dict = db_to_dict(ticket)
+        ticket_dict['items'] = [db_to_dict(item) for item in ticket.items]
+
+        logger.info(f"Ticket #{ticket.ticket_number} creado exitosamente por {current_user.email}")
+        return ticket_dict
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creando ticket: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al crear ticket: {str(e)}")
+
+@api_router.put("/tickets/{ticket_id}")
+def update_ticket(ticket_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Actualiza un ticket existente"""
+    try:
+        ticket = db.query(TicketDB).filter(TicketDB.id == ticket_id).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket no encontrado")
+
+        # Update basic fields
+        if data.get('client_name'):
+            ticket.client_name = data['client_name']
+        if 'client_email' in data:
+            ticket.client_email = data['client_email']
+        if 'notes' in data:
+            ticket.notes = data['notes']
+        if 'status' in data:
+            ticket.status = data['status']
+
+        # Update comisionista if changed
+        if 'comisionista_id' in data:
+            if data['comisionista_id']:
+                comisionista = db.query(UserDB).filter(UserDB.id == data['comisionista_id']).first()
+                if comisionista:
+                    ticket.comisionista_id = comisionista.id
+                    ticket.comisionista_name = comisionista.name
+            else:
+                ticket.comisionista_id = None
+                ticket.comisionista_name = None
+
+        # If items are provided, recreate them
+        if 'items' in data and data['items']:
+            # Delete existing items
+            db.query(TicketItemDB).filter(TicketItemDB.ticket_id == ticket_id).delete()
+
+            # Get commission percentage
+            commission_percentage = 0.0
+            if ticket.comisionista_id:
+                comisionista = db.query(UserDB).filter(UserDB.id == ticket.comisionista_id).first()
+                if comisionista:
+                    commission_percentage = comisionista.commission_percentage or 0.0
+
+            total_amount = 0.0
+            total_commission = 0.0
+
+            for item_data in data['items']:
+                product_id = item_data.get('product_id')
+                quantity = int(item_data.get('quantity', 1))
+
+                product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
+                if product:
+                    unit_price = product.sale_price or product.base_price or 0
+                    product_name = product.name
+                    category = product.category or ''
+                else:
+                    unit_price = float(item_data.get('unit_price', 0))
+                    product_name = item_data.get('product_name', 'Producto')
+                    category = item_data.get('category', '')
+
+                subtotal = quantity * unit_price
+                commission_amount = subtotal * (commission_percentage / 100)
+
+                ticket_item = TicketItemDB(
+                    id=str(uuid.uuid4()),
+                    ticket_id=ticket.id,
+                    product_id=product_id,
+                    product_name=product_name,
+                    category=category,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    subtotal=subtotal,
+                    commission_percentage=commission_percentage,
+                    commission_amount=commission_amount
+                )
+                db.add(ticket_item)
+
+                total_amount += subtotal
+                total_commission += commission_amount
+
+            ticket.total_amount = total_amount
+            ticket.total_commission = total_commission
+
+        db.commit()
+        db.refresh(ticket)
+
+        ticket_dict = db_to_dict(ticket)
+        ticket_dict['items'] = [db_to_dict(item) for item in ticket.items]
+        return ticket_dict
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error actualizando ticket: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al actualizar ticket: {str(e)}")
+
+@api_router.delete("/tickets/{ticket_id}")
+def delete_ticket(ticket_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Elimina un ticket"""
+    ticket = db.query(TicketDB).filter(TicketDB.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+
+    db.delete(ticket)
+    db.commit()
+    logger.info(f"Ticket #{ticket.ticket_number} eliminado por {current_user.email}")
+    return {"message": "Ticket eliminado"}
+
+@api_router.put("/tickets/{ticket_id}/payment")
+def update_ticket_payment(ticket_id: str, payment_status: str, payment_method: Optional[str] = None, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Actualiza el estado de pago de un ticket"""
+    ticket = db.query(TicketDB).filter(TicketDB.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+
+    ticket.payment_status = payment_status
+    if payment_method:
+        ticket.payment_method = payment_method
+    if payment_status == 'paid':
+        ticket.payment_date = datetime.utcnow()
+        ticket.status = 'completed'
+
+    db.commit()
+
+    ticket_dict = db_to_dict(ticket)
+    ticket_dict['items'] = [db_to_dict(item) for item in ticket.items]
+    return ticket_dict
+
+@api_router.put("/tickets/{ticket_id}/commission")
+def update_ticket_commission(ticket_id: str, commission_status: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Actualiza el estado de comisión de un ticket"""
+    ticket = db.query(TicketDB).filter(TicketDB.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+
+    ticket.commission_status = commission_status
+    if commission_status == 'paid':
+        ticket.commission_paid_date = datetime.utcnow()
+
+    db.commit()
+
+    ticket_dict = db_to_dict(ticket)
+    ticket_dict['items'] = [db_to_dict(item) for item in ticket.items]
+    return ticket_dict
 
 # ============ REQUESTS ENDPOINTS ============
 
@@ -1218,9 +1697,13 @@ def create_request(data: dict, db: Session = Depends(get_db)):
         id=str(uuid.uuid4()),
         type=data.get('type', 'contact'),
         name=data.get('name'),
+        client_name=data.get('client_name') or data.get('name'),
         email=data.get('email'),
+        client_email=data.get('client_email') or data.get('email'),
         phone=data.get('phone'),
+        client_phone=data.get('client_phone') or data.get('phone'),
         company=data.get('company'),
+        company_name=data.get('company_name') or data.get('company'),
         message=data.get('message'),
         source=data.get('source'),
         status='new'
@@ -1234,11 +1717,11 @@ def update_request(request_id: str, data: dict, db: Session = Depends(get_db), c
     request = db.query(RequestDB).filter(RequestDB.id == request_id).first()
     if not request:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
-    
+
     for key, value in data.items():
         if hasattr(request, key) and key != 'id':
             setattr(request, key, value)
-    
+
     db.commit()
     return db_to_dict(request)
 
@@ -1251,30 +1734,40 @@ def get_requests_count(db: Session = Depends(get_db), current_user: UserDB = Dep
 
 @api_router.get("/quotes")
 def get_quotes(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    quotes = db.query(QuoteDB).all()
-    result = []
-    for quote in quotes:
-        quote_dict = db_to_dict(quote)
-        # items ya es un array JSON, no necesita conversión
-        # quote_dict['items'] ya está incluido por db_to_dict()
-        result.append(quote_dict)
-    return result
+    quotes = db.query(QuoteDB).order_by(QuoteDB.created_at.desc()).all()
+    return [db_to_dict(q) for q in quotes]
+
+@api_router.get("/quotes/pending/count")
+def get_pending_quotes_count(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    count = db.query(QuoteDB).filter(QuoteDB.status == 'draft').count()
+    return {"count": count}
+
+@api_router.get("/quotes/pending-count")
+def get_pending_quotes_count_alt(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    count = db.query(QuoteDB).filter(QuoteDB.status.in_(['draft', 'pre-cotizacion'])).count()
+    return {"count": count}
+
+@api_router.get("/quotes/{quote_id}")
+def get_quote(quote_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    quote = db.query(QuoteDB).filter(QuoteDB.id == quote_id).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    return db_to_dict(quote)
 
 @api_router.post("/quotes")
 def create_quote(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    # Los items se almacenan como JSON en la columna 'items'
     items_data = data.get('items', [])
 
     quote = QuoteDB(
         id=str(uuid.uuid4()),
-        quote_number=data.get('quote_number', f"COT-{datetime.now().strftime('%Y%m%d%H%M%S')}"),
+        client_id=data.get('client_id'),
         client_name=data.get('client_name'),
         client_email=data.get('client_email'),
         client_phone=data.get('client_phone'),
-        company_name=data.get('client_company') or data.get('company_name'),  # Soporta ambos nombres por compatibilidad
-        items=items_data,  # Guardar items como JSON
+        company_name=data.get('client_company') or data.get('company_name'),
+        items=items_data,
         status=data.get('status', 'draft'),
-        valid_until=data.get('valid_until'),
+        valid_until=parse_date(data.get('valid_until')),
         subtotal=data.get('subtotal', 0),
         tax=data.get('tax', 0),
         total=data.get('total', 0),
@@ -1283,326 +1776,46 @@ def create_quote(data: dict, db: Session = Depends(get_db), current_user: UserDB
     )
     db.add(quote)
     db.commit()
+    return db_to_dict(quote)
 
-    quote_dict = db_to_dict(quote)
-    return quote_dict
+@api_router.put("/quotes/{quote_id}")
+def update_quote(quote_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    quote = db.query(QuoteDB).filter(QuoteDB.id == quote_id).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
 
-@api_router.get("/quotes/pending/count")
-def get_pending_quotes_count(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    count = db.query(QuoteDB).filter(QuoteDB.status == 'draft').count()
-    return {"count": count}
-
-# ============ DASHBOARD STATS ============
-
-@api_router.get("/stats/dashboard")
-def get_dashboard_stats(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    total_clients = db.query(ClientDB).filter(ClientDB.is_active == True).count()
-    total_offices = db.query(OfficeDB).count()
-    occupied_offices = db.query(OfficeDB).filter(OfficeDB.status == 'occupied').count()
-    available_offices = db.query(OfficeDB).filter(OfficeDB.status == 'available').count()
-    
-    total_income = db.query(OfficeDB).with_entities(
-        db.query(OfficeDB).with_entities(OfficeDB.billed_value_uf).all()
-    )
-    
-    return {
-        "total_clients": total_clients,
-        "total_offices": total_offices,
-        "occupied_offices": occupied_offices,
-        "available_offices": available_offices,
-        "occupancy_rate": round((occupied_offices / total_offices * 100) if total_offices > 0 else 0, 1)
-    }
-
-# ============ FLOOR PLAN ============
-
-@api_router.get("/floor-plan-coordinates")
-def get_floor_plan_coordinates(db: Session = Depends(get_db)):
-    coords = db.query(FloorPlanCoordinateDB).all()
-    return {"coordinates": {c.office_number: db_to_dict(c) for c in coords}}
-
-@api_router.post("/floor-plan-coordinates")
-def save_floor_plan_coordinates(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    # Clear existing
-    db.query(FloorPlanCoordinateDB).delete()
-    
-    for office_num, coord in data.get('coordinates', {}).items():
-        new_coord = FloorPlanCoordinateDB(
-            id=str(uuid.uuid4()),
-            office_number=office_num,
-            x=coord.get('x'),
-            y=coord.get('y'),
-            width=coord.get('width'),
-            height=coord.get('height')
-        )
-        db.add(new_coord)
-    
-    db.commit()
-    return {"message": "Coordenadas guardadas"}
-
-# ============ COMISIONISTAS ============
-
-@api_router.get("/comisionistas")
-def get_comisionistas(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    comisionistas = db.query(UserDB).filter(UserDB.role == 'comisionista').all()
-    return [db_to_dict(c, exclude=['password']) for c in comisionistas]
-
-# ============ SALES ============
-
-@api_router.get("/sales")
-def get_sales(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    sales = db.query(SaleDB).all()
-    return [db_to_dict(s) for s in sales]
-
-# ============ PUBLIC ENDPOINTS ============
-
-@api_router.get("/public/offices")
-def get_public_offices(db: Session = Depends(get_db)):
-    offices = db.query(OfficeDB).all()
-    return [db_to_dict(o) for o in offices]
-
-# ============ SEED PROFILES ============
-
-@api_router.post("/seed-profiles")
-def seed_profiles(db: Session = Depends(get_db)):
-    existing = db.query(ProfileDB).count()
-    if existing > 0:
-        return {"message": "Perfiles ya existen"}
-    
-    admin_profile = ProfileDB(
-        id=str(uuid.uuid4()),
-        name="ADMIN",
-        description="Administrador con acceso total",
-        allowed_modules=AVAILABLE_MODULES,
-        is_system=True
-    )
-    
-    receptionist_profile = ProfileDB(
-        id=str(uuid.uuid4()),
-        name="Recepcionista",
-        description="Acceso a módulos de atención",
-        allowed_modules=["dashboard", "resources", "requests", "tickets", "clients"],
-        is_system=False
-    )
-    
-    db.add(admin_profile)
-    db.add(receptionist_profile)
-    db.commit()
-    
-    # Update admin user
-    admin_user = db.query(UserDB).filter(UserDB.role == 'admin').first()
-    if admin_user:
-        admin_user.profile_id = admin_profile.id
-        db.commit()
-    
-    return {"message": "Perfiles creados", "profiles": [admin_profile.name, receptionist_profile.name]}
-
-# ============ CLIENT CONTACTS & DOCUMENTS ============
-
-@api_router.post("/clients/{client_id}/contacts")
-def add_client_contact(client_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    client = db.query(ClientDB).filter(ClientDB.id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    
-    # Update client with additional contact if needed
-    contacts = data.get('contacts', [])
-    # For now, we'll store in notes since we don't have a separate contacts table
-    return {"message": "Contacto añadido"}
-
-@api_router.post("/clients/{client_id}/documents")
-def add_client_document(client_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    client = db.query(ClientDB).filter(ClientDB.id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    
-    doc = ClientDocumentDB(
-        id=str(uuid.uuid4()),
-        client_id=client_id,
-        name=data.get('name'),
-        file_url=data.get('file_url'),
-        document_type=data.get('document_type'),
-        expiry_date=data.get('expiry_date'),
-        notifications_enabled=data.get('notifications_enabled', False),
-        notification_days=data.get('notification_days', 30)
-    )
-    db.add(doc)
-    db.commit()
-    return db_to_dict(doc)
-
-@api_router.put("/clients/{client_id}/documents/{document_id}")
-def update_client_document(client_id: str, document_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    doc = db.query(ClientDocumentDB).filter(ClientDocumentDB.id == document_id, ClientDocumentDB.client_id == client_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
-    
     for key, value in data.items():
-        if hasattr(doc, key) and key != 'id':
-            setattr(doc, key, value)
-    
+        if hasattr(quote, key) and key not in ['id']:
+            if key == 'valid_until':
+                value = parse_date(value)
+            setattr(quote, key, value)
+
     db.commit()
-    return db_to_dict(doc)
+    return db_to_dict(quote)
 
-@api_router.delete("/clients/{client_id}/documents/{document_id}")
-def delete_client_document(client_id: str, document_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    doc = db.query(ClientDocumentDB).filter(ClientDocumentDB.id == document_id, ClientDocumentDB.client_id == client_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
-    
-    db.delete(doc)
+@api_router.delete("/quotes/{quote_id}")
+def delete_quote(quote_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    quote = db.query(QuoteDB).filter(QuoteDB.id == quote_id).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+
+    db.delete(quote)
     db.commit()
-    return {"message": "Documento eliminado"}
-
-# ============ CONTRACTS EXPIRING SOON ============
-
-@api_router.get("/contracts/expiring-soon")
-def get_expiring_contracts(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    from datetime import date
-    today = date.today()
-    threshold = today + timedelta(days=30)
-    
-    expiring = []
-    
-    # Check offices
-    offices = db.query(OfficeDB).filter(
-        OfficeDB.contract_end != None,
-        OfficeDB.contract_end <= threshold,
-        OfficeDB.contract_end >= today
-    ).all()
-    
-    for office in offices:
-        client_name = office.client.company_name if office.client else "Sin cliente"
-        expiring.append({
-            "type": "office",
-            "id": office.id,
-            "name": f"Oficina {office.office_number}",
-            "client_name": client_name,
-            "expiry_date": office.contract_end.isoformat() if office.contract_end else None,
-            "days_remaining": (office.contract_end - today).days if office.contract_end else 0
-        })
-    
-    # Check client documents
-    documents = db.query(ClientDocumentDB).filter(
-        ClientDocumentDB.expiry_date != None,
-        ClientDocumentDB.expiry_date <= threshold,
-        ClientDocumentDB.expiry_date >= today,
-        ClientDocumentDB.notifications_enabled == True
-    ).all()
-    
-    for doc in documents:
-        client_name = doc.client.company_name if doc.client else "Sin cliente"
-        expiring.append({
-            "type": "document",
-            "id": doc.id,
-            "name": doc.name,
-            "client_name": client_name,
-            "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
-            "days_remaining": (doc.expiry_date - today).days if doc.expiry_date else 0
-        })
-    
-    return sorted(expiring, key=lambda x: x.get('days_remaining', 999))
-
-# ============ INVOICES ============
-
-@api_router.get("/invoices")
-def get_invoices(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    invoices = db.query(InvoiceDB).all()
-    return [db_to_dict(i) for i in invoices]
-
-@api_router.get("/invoices/pending")
-def get_pending_invoices(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    invoices = db.query(InvoiceDB).filter(InvoiceDB.status.in_(['draft', 'sent'])).all()
-    return [db_to_dict(i) for i in invoices]
-
-@api_router.post("/invoices")
-def create_invoice(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    invoice = InvoiceDB(
-        id=str(uuid.uuid4()),
-        invoice_number=data.get('invoice_number', f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}"),
-        ticket_id=data.get('ticket_id'),
-        client_id=data.get('client_id'),
-        issue_date=data.get('issue_date'),
-        due_date=data.get('due_date'),
-        subtotal=data.get('subtotal', 0),
-        tax=data.get('tax', 0),
-        total=data.get('total', 0),
-        status=data.get('status', 'draft'),
-        notes=data.get('notes')
-    )
-    db.add(invoice)
-    db.commit()
-    return db_to_dict(invoice)
-
-@api_router.put("/invoices/{invoice_id}/status")
-def update_invoice_status(invoice_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
-    
-    invoice.status = data.get('status', invoice.status)
-    db.commit()
-    return db_to_dict(invoice)
-
-# ============ DASHBOARD STATS COMPLETE ============
-
-@api_router.get("/dashboard/stats")
-def get_dashboard_stats_full(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    from sqlalchemy import func
-    
-    total_clients = db.query(ClientDB).filter(ClientDB.is_active == True).count()
-    total_offices = db.query(OfficeDB).count()
-    occupied_offices = db.query(OfficeDB).filter(OfficeDB.status == 'occupied').count()
-    available_offices = db.query(OfficeDB).filter(OfficeDB.status == 'available').count()
-    
-    # Calculate total income from offices
-    total_billed = db.query(func.sum(OfficeDB.billed_value_uf)).scalar() or 0
-    total_cost = db.query(func.sum(OfficeDB.cost_uf)).scalar() or 0
-    
-    # Parking/Storage stats
-    total_parking = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'parking').count()
-    occupied_parking = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'parking', ParkingStorageDB.status == 'occupied').count()
-    total_storage = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'storage').count()
-    occupied_storage = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'storage', ParkingStorageDB.status == 'occupied').count()
-    
-    # Pending requests
-    new_requests = db.query(RequestDB).filter(RequestDB.status == 'new').count()
-    
-    # Pending quotes
-    pending_quotes = db.query(QuoteDB).filter(QuoteDB.status == 'draft').count()
-    
-    return {
-        "total_clients": total_clients,
-        "total_offices": total_offices,
-        "occupied_offices": occupied_offices,
-        "available_offices": available_offices,
-        "occupancy_rate": round((occupied_offices / total_offices * 100) if total_offices > 0 else 0, 1),
-        "total_billed_uf": float(total_billed),
-        "total_cost_uf": float(total_cost),
-        "margin_uf": float(total_billed - total_cost),
-        "total_parking": total_parking,
-        "occupied_parking": occupied_parking,
-        "total_storage": total_storage,
-        "occupied_storage": occupied_storage,
-        "new_requests": new_requests,
-        "pending_quotes": pending_quotes
-    }
-
-# ============ QUOTES PUBLIC ============
+    return {"message": "Cotización eliminada"}
 
 @api_router.post("/quotes/public")
 def create_public_quote(data: dict, db: Session = Depends(get_db)):
     quote = QuoteDB(
         id=str(uuid.uuid4()),
-        quote_number=f"PRE-{datetime.now().strftime('%Y%m%d%H%M%S')}",
         client_name=data.get('client_name'),
         client_email=data.get('client_email'),
         client_phone=data.get('client_phone'),
-        client_company=data.get('client_company'),
+        company_name=data.get('client_company'),
         status='pre-cotizacion',
         notes=data.get('message')
     )
     db.add(quote)
-    
-    # Also create a request entry
+
     request = RequestDB(
         id=str(uuid.uuid4()),
         type='quote',
@@ -1615,50 +1828,379 @@ def create_public_quote(data: dict, db: Session = Depends(get_db)):
         status='new'
     )
     db.add(request)
-    
-    db.commit()
-    return db_to_dict(quote)
-
-@api_router.get("/quotes/pending-count")
-def get_pending_quotes_count_alt(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    count = db.query(QuoteDB).filter(QuoteDB.status.in_(['draft', 'pre-cotizacion'])).count()
-    return {"count": count}
-
-@api_router.get("/quotes/{quote_id}")
-def get_quote(quote_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    quote = db.query(QuoteDB).filter(QuoteDB.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Cotización no encontrada")
-
-    quote_dict = db_to_dict(quote)
-    # items ya es un array JSON, no necesita conversión
-    return quote_dict
-
-@api_router.put("/quotes/{quote_id}")
-def update_quote(quote_id: str, data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    quote = db.query(QuoteDB).filter(QuoteDB.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Cotización no encontrada")
-
-    for key, value in data.items():
-        if hasattr(quote, key) and key not in ['id']:
-            # items se almacena como JSON directamente
-            setattr(quote, key, value)
 
     db.commit()
     return db_to_dict(quote)
 
-@api_router.delete("/quotes/{quote_id}")
-def delete_quote(quote_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    quote = db.query(QuoteDB).filter(QuoteDB.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Cotización no encontrada")
-    
-    db.delete(quote)
-    db.commit()
-    return {"message": "Cotización eliminada"}
+# ============ INVOICES ENDPOINTS ============
 
-# ============ TEMPLATES ============
+@api_router.get("/invoices")
+def get_invoices(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    invoices = db.query(InvoiceDB).order_by(InvoiceDB.created_at.desc()).all()
+    return [db_to_dict(i) for i in invoices]
+
+@api_router.get("/invoices/pending")
+def get_pending_invoices(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    invoices = db.query(InvoiceDB).filter(InvoiceDB.status.in_(['draft', 'pending', 'sent'])).all()
+    return [db_to_dict(i) for i in invoices]
+
+@api_router.get("/invoices/history")
+def get_invoice_history(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    invoices = db.query(InvoiceDB).filter(InvoiceDB.status == 'invoiced').order_by(InvoiceDB.invoiced_at.desc()).all()
+    return [db_to_dict(i) for i in invoices]
+
+@api_router.post("/invoices")
+def create_invoice(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    invoice = InvoiceDB(
+        id=str(uuid.uuid4()),
+        invoice_number=data.get('invoice_number', f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}"),
+        ticket_id=data.get('ticket_id'),
+        client_id=data.get('client_id'),
+        client_name=data.get('client_name'),
+        items=data.get('items'),
+        sales_ids=data.get('sales_ids'),
+        issue_date=parse_date(data.get('issue_date')),
+        due_date=parse_date(data.get('due_date')),
+        subtotal=data.get('subtotal', 0),
+        tax=data.get('tax', 0),
+        total_amount=data.get('total_amount') or data.get('total', 0),
+        status=data.get('status', 'pending'),
+        notes=data.get('notes')
+    )
+    db.add(invoice)
+    db.commit()
+    return db_to_dict(invoice)
+
+@api_router.put("/invoices/{invoice_id}/status")
+def update_invoice_status(invoice_id: str, status: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    invoice.status = status
+    if status == 'invoiced':
+        invoice.invoiced_at = datetime.utcnow()
+
+    db.commit()
+    return db_to_dict(invoice)
+
+# ============ SALES ENDPOINTS ============
+
+@api_router.get("/sales")
+def get_sales(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    sales = db.query(SaleDB).order_by(SaleDB.sale_date.desc()).all()
+    return [db_to_dict(s) for s in sales]
+
+@api_router.post("/sales")
+def create_sale(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    # Get product info
+    product_id = data.get('product_id')
+    product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
+
+    if product:
+        product_name = product.name
+        category = product.category or ''
+        unit_price = product.sale_price or product.base_price or 0
+    else:
+        product_name = data.get('product_name', 'Producto')
+        category = data.get('category', '')
+        unit_price = float(data.get('unit_price', 0))
+
+    quantity = int(data.get('quantity', 1))
+    total_amount = quantity * unit_price
+
+    # Get comisionista info
+    comisionista_name = None
+    commission_percentage = 0.0
+    commission_amount = 0.0
+
+    if data.get('comisionista_id'):
+        comisionista = db.query(UserDB).filter(UserDB.id == data['comisionista_id']).first()
+        if comisionista:
+            comisionista_name = comisionista.name
+            commission_percentage = comisionista.commission_percentage or 0.0
+            commission_amount = total_amount * (commission_percentage / 100)
+
+    sale = SaleDB(
+        id=str(uuid.uuid4()),
+        product_id=product_id,
+        product_name=product_name,
+        category=category,
+        quantity=quantity,
+        unit_price=unit_price,
+        total_amount=total_amount,
+        sale_date=date.today(),
+        client_name=data.get('client_name', ''),
+        client_email=data.get('client_email', ''),
+        comisionista_id=data.get('comisionista_id'),
+        comisionista_name=comisionista_name,
+        commission_percentage=commission_percentage,
+        commission_amount=commission_amount,
+        notes=data.get('notes', ''),
+        created_by=current_user.id
+    )
+    db.add(sale)
+    db.commit()
+    return db_to_dict(sale)
+
+@api_router.put("/sales/{sale_id}/payment")
+def update_sale_payment(sale_id: str, payment_status: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    sale = db.query(SaleDB).filter(SaleDB.id == sale_id).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    sale.payment_status = payment_status
+    db.commit()
+    return db_to_dict(sale)
+
+@api_router.put("/sales/{sale_id}/commission")
+def update_sale_commission(sale_id: str, commission_status: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    sale = db.query(SaleDB).filter(SaleDB.id == sale_id).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    sale.commission_status = commission_status
+    db.commit()
+    return db_to_dict(sale)
+
+# ============ REPORTS ENDPOINTS ============
+
+@api_router.get("/reports/{report_type}/excel")
+def generate_report_excel(report_type: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Genera reportes en formato Excel"""
+    try:
+        import csv
+
+        if report_type == 'sales':
+            # Generate sales report
+            tickets = db.query(TicketDB).order_by(TicketDB.ticket_date.desc()).all()
+
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # Header
+            writer.writerow([
+                'Numero Ticket', 'Fecha', 'Cliente', 'Email', 'Producto', 'Categoria',
+                'Cantidad', 'Precio Unitario', 'Subtotal', 'Comisionista', 'Comision',
+                'Estado Pago', 'Metodo Pago', 'Estado Comision'
+            ])
+
+            # Data
+            for ticket in tickets:
+                for item in ticket.items:
+                    writer.writerow([
+                        ticket.ticket_number,
+                        ticket.ticket_date.strftime('%Y-%m-%d') if ticket.ticket_date else '',
+                        ticket.client_name,
+                        ticket.client_email or '',
+                        item.product_name,
+                        item.category or '',
+                        item.quantity,
+                        item.unit_price,
+                        item.subtotal,
+                        ticket.comisionista_name or '',
+                        item.commission_amount,
+                        ticket.payment_status,
+                        ticket.payment_method or '',
+                        ticket.commission_status
+                    ])
+
+            content = output.getvalue()
+            output.close()
+
+            return Response(
+                content=content.encode('utf-8-sig'),
+                media_type='text/csv',
+                headers={
+                    'Content-Disposition': f'attachment; filename=ventas_tna_office_{datetime.now().strftime("%Y%m%d")}.csv'
+                }
+            )
+
+        elif report_type == 'commissions':
+            # Generate commissions report
+            comisionistas = db.query(UserDB).filter(UserDB.role == 'comisionista').all()
+
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # Header
+            writer.writerow([
+                'Comisionista', 'Email', 'Porcentaje Comision', 'Total Ventas',
+                'Total Comisiones', 'Comisiones Pendientes', 'Comisiones Pagadas'
+            ])
+
+            # Data
+            for comisionista in comisionistas:
+                tickets = db.query(TicketDB).filter(TicketDB.comisionista_id == comisionista.id).all()
+                total_ventas = sum(t.total_amount for t in tickets)
+                total_comisiones = sum(t.total_commission for t in tickets)
+                comisiones_pendientes = sum(t.total_commission for t in tickets if t.commission_status == 'pending')
+                comisiones_pagadas = sum(t.total_commission for t in tickets if t.commission_status == 'paid')
+
+                writer.writerow([
+                    comisionista.name,
+                    comisionista.email,
+                    comisionista.commission_percentage,
+                    total_ventas,
+                    total_comisiones,
+                    comisiones_pendientes,
+                    comisiones_pagadas
+                ])
+
+            content = output.getvalue()
+            output.close()
+
+            return Response(
+                content=content.encode('utf-8-sig'),
+                media_type='text/csv',
+                headers={
+                    'Content-Disposition': f'attachment; filename=comisiones_tna_office_{datetime.now().strftime("%Y%m%d")}.csv'
+                }
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Tipo de reporte no válido: {report_type}")
+
+    except Exception as e:
+        logger.error(f"Error generando reporte {report_type}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generando reporte: {str(e)}")
+
+# ============ COMISIONISTAS ENDPOINTS ============
+
+@api_router.get("/comisionistas")
+def get_comisionistas(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    comisionistas = db.query(UserDB).filter(UserDB.role == 'comisionista', UserDB.is_active == True).all()
+    return [db_to_dict(c, exclude=['password']) for c in comisionistas]
+
+# ============ DASHBOARD STATS ============
+
+@api_router.get("/dashboard/stats")
+def get_dashboard_stats_full(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    try:
+        total_clients = db.query(ClientDB).filter(ClientDB.is_active == True).count()
+        total_offices = db.query(OfficeDB).count()
+        occupied_offices = db.query(OfficeDB).filter(OfficeDB.status == 'occupied').count()
+        available_offices = db.query(OfficeDB).filter(OfficeDB.status == 'available').count()
+
+        total_billed = db.query(func.sum(OfficeDB.billed_value_uf)).scalar() or 0
+        total_cost = db.query(func.sum(OfficeDB.cost_uf)).scalar() or 0
+
+        total_parking = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'parking').count()
+        occupied_parking = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'parking', ParkingStorageDB.status == 'occupied').count()
+        total_storage = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'storage').count()
+        occupied_storage = db.query(ParkingStorageDB).filter(ParkingStorageDB.type == 'storage', ParkingStorageDB.status == 'occupied').count()
+
+        new_requests = db.query(RequestDB).filter(RequestDB.status == 'new').count()
+        pending_quotes = db.query(QuoteDB).filter(QuoteDB.status.in_(['draft', 'pre-cotizacion'])).count()
+
+        return {
+            "total_clients": total_clients,
+            "total_offices": total_offices,
+            "occupied_offices": occupied_offices,
+            "available_offices": available_offices,
+            "occupancy_rate": round((occupied_offices / total_offices * 100) if total_offices > 0 else 0, 1),
+            "total_billed_uf": float(total_billed),
+            "total_cost_uf": float(total_cost),
+            "margin_uf": float(total_billed - total_cost),
+            "total_parking": total_parking,
+            "occupied_parking": occupied_parking,
+            "total_storage": total_storage,
+            "occupied_storage": occupied_storage,
+            "new_requests": new_requests,
+            "pending_quotes": pending_quotes
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas: {e}")
+        raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")
+
+@api_router.get("/stats/dashboard")
+def get_dashboard_stats(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    return get_dashboard_stats_full(db, current_user)
+
+# ============ CONTRACTS EXPIRING SOON ============
+
+@api_router.get("/contracts/expiring-soon")
+def get_expiring_contracts(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    today = date.today()
+    threshold = today + timedelta(days=30)
+
+    expiring = []
+
+    # Check offices
+    offices = db.query(OfficeDB).filter(
+        OfficeDB.contract_end != None,
+        OfficeDB.contract_end <= threshold,
+        OfficeDB.contract_end >= today
+    ).all()
+
+    for office in offices:
+        client_name = office.client.company_name if office.client else "Sin cliente"
+        expiring.append({
+            "type": "office",
+            "id": office.id,
+            "name": f"Oficina {office.office_number}",
+            "client_name": client_name,
+            "expiry_date": office.contract_end.isoformat() if office.contract_end else None,
+            "days_remaining": (office.contract_end - today).days if office.contract_end else 0
+        })
+
+    # Check client documents
+    documents = db.query(ClientDocumentDB).filter(
+        ClientDocumentDB.expiry_date != None,
+        ClientDocumentDB.expiry_date <= threshold,
+        ClientDocumentDB.expiry_date >= today,
+        ClientDocumentDB.notifications_enabled == True
+    ).all()
+
+    for doc in documents:
+        client_name = doc.client.company_name if doc.client else "Sin cliente"
+        expiring.append({
+            "type": "document",
+            "id": doc.id,
+            "name": doc.name,
+            "client_name": client_name,
+            "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
+            "days_remaining": (doc.expiry_date - today).days if doc.expiry_date else 0
+        })
+
+    return sorted(expiring, key=lambda x: x.get('days_remaining', 999))
+
+# ============ FLOOR PLAN ENDPOINTS ============
+
+@api_router.get("/floor-plan-coordinates")
+def get_floor_plan_coordinates(db: Session = Depends(get_db)):
+    coords = db.query(FloorPlanCoordinateDB).all()
+    return {"coordinates": {c.office_number: db_to_dict(c) for c in coords}}
+
+@api_router.post("/floor-plan-coordinates")
+def save_floor_plan_coordinates(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Solo administradores pueden editar el plano")
+
+    db.query(FloorPlanCoordinateDB).delete()
+
+    for office_num, coord in data.get('coordinates', {}).items():
+        new_coord = FloorPlanCoordinateDB(
+            id=str(uuid.uuid4()),
+            office_number=office_num,
+            x=coord.get('x'),
+            y=coord.get('y'),
+            width=coord.get('width'),
+            height=coord.get('height')
+        )
+        db.add(new_coord)
+
+    db.commit()
+    return {"message": "Coordenadas guardadas"}
+
+@api_router.get("/floor-plan/coordinates")
+def get_floor_plan_coords_legacy(db: Session = Depends(get_db)):
+    return get_floor_plan_coordinates(db)
+
+@api_router.post("/floor-plan/coordinates")
+def save_floor_plan_coords_legacy(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    return save_floor_plan_coordinates(data, db, current_user)
+
+# ============ TEMPLATES ENDPOINTS ============
 
 @api_router.get("/templates")
 def get_templates(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
@@ -1690,11 +2232,11 @@ def update_template(template_id: str, data: dict, db: Session = Depends(get_db),
     template = db.query(QuoteTemplateDB).filter(QuoteTemplateDB.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
-    
+
     for key, value in data.items():
         if hasattr(template, key) and key != 'id':
             setattr(template, key, value)
-    
+
     db.commit()
     return db_to_dict(template)
 
@@ -1703,71 +2245,48 @@ def delete_template(template_id: str, db: Session = Depends(get_db), current_use
     template = db.query(QuoteTemplateDB).filter(QuoteTemplateDB.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
-    
+
     db.delete(template)
     db.commit()
     return {"message": "Plantilla eliminada"}
 
-# ============ OFFICES PUBLIC ============
+# ============ SEED ENDPOINTS ============
 
-@api_router.get("/offices/public/all")
-def get_public_offices_all(db: Session = Depends(get_db)):
-    offices = db.query(OfficeDB).all()
-    return [db_to_dict(o) for o in offices]
+@api_router.post("/seed-profiles")
+def seed_profiles(db: Session = Depends(get_db)):
+    existing = db.query(ProfileDB).count()
+    if existing > 0:
+        return {"message": "Perfiles ya existen"}
 
-# ============ FLOOR PLAN LEGACY ============
+    admin_profile = ProfileDB(
+        id=str(uuid.uuid4()),
+        name="ADMIN",
+        description="Administrador con acceso total",
+        allowed_modules=AVAILABLE_MODULES,
+        is_system=True
+    )
 
-@api_router.get("/floor-plan/coordinates")
-def get_floor_plan_coords_legacy(db: Session = Depends(get_db)):
-    coords = db.query(FloorPlanCoordinateDB).all()
-    return {"coordinates": {c.office_number: db_to_dict(c) for c in coords}}
+    receptionist_profile = ProfileDB(
+        id=str(uuid.uuid4()),
+        name="Recepcionista",
+        description="Acceso a módulos de atención",
+        allowed_modules=["dashboard", "resources", "requests", "tickets", "clients"],
+        is_system=False
+    )
 
-@api_router.post("/floor-plan/coordinates")
-def save_floor_plan_coords_legacy(data: dict, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    db.query(FloorPlanCoordinateDB).delete()
-    
-    for office_num, coord in data.get('coordinates', {}).items():
-        new_coord = FloorPlanCoordinateDB(
-            id=str(uuid.uuid4()),
-            office_number=office_num,
-            x=coord.get('x'),
-            y=coord.get('y'),
-            width=coord.get('width'),
-            height=coord.get('height')
-        )
-        db.add(new_coord)
-    
+    db.add(admin_profile)
+    db.add(receptionist_profile)
     db.commit()
-    return {"message": "Coordenadas guardadas"}
 
-# ============ CATEGORIES PUBLIC ============
+    admin_user = db.query(UserDB).filter(UserDB.role == 'admin').first()
+    if admin_user:
+        admin_user.profile_id = admin_profile.id
+        db.commit()
 
-@api_router.get("/categories/public")
-def get_public_categories(db: Session = Depends(get_db)):
-    categories = db.query(CategoryDB).all()
-    return [db_to_dict(c) for c in categories]
-
-@api_router.get("/products/public")
-def get_public_products(db: Session = Depends(get_db)):
-    products = db.query(ProductDB).filter(ProductDB.is_active == True).all()
-    return [db_to_dict(p) for p in products]
-
-# ============ BOOKINGS PUBLIC ============
-
-@api_router.get("/bookings/public/{resource_type}/{resource_id}")
-def get_public_bookings(resource_type: str, resource_id: str, db: Session = Depends(get_db)):
-    bookings = db.query(BookingDB).filter(
-        BookingDB.resource_type == resource_type,
-        BookingDB.resource_id == resource_id,
-        BookingDB.status != 'cancelled'
-    ).all()
-    return [db_to_dict(b) for b in bookings]
-
-# ============ SEED DATA ============
+    return {"message": "Perfiles creados", "profiles": [admin_profile.name, receptionist_profile.name]}
 
 @api_router.post("/seed")
 def seed_database(db: Session = Depends(get_db)):
-    # Seed profiles if not exist
     existing_profiles = db.query(ProfileDB).count()
     if existing_profiles == 0:
         admin_profile = ProfileDB(
@@ -1787,8 +2306,7 @@ def seed_database(db: Session = Depends(get_db)):
         db.add(admin_profile)
         db.add(receptionist_profile)
         db.commit()
-    
-    # Seed admin user if not exist
+
     existing_admin = db.query(UserDB).filter(UserDB.email == 'admin@tnaoffice.cl').first()
     if not existing_admin:
         admin_profile = db.query(ProfileDB).filter(ProfileDB.name == 'ADMIN').first()
@@ -1802,7 +2320,7 @@ def seed_database(db: Session = Depends(get_db)):
         )
         db.add(admin_user)
         db.commit()
-    
+
     return {"message": "Base de datos inicializada"}
 
 # ============ REGISTER ROUTER ============
@@ -1813,8 +2331,16 @@ app.include_router(api_router)
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "database": "MariaDB"}
+    return {"status": "healthy", "database": "MariaDB", "version": "2.0.0"}
+
+@app.get("/")
+def root():
+    return {"message": "TNA Office API v2.0.0", "status": "running"}
+
+# ============ ENTRY POINT ============
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    port = int(os.environ.get('PORT', 8001))
+    host = os.environ.get('HOST', '0.0.0.0')
+    uvicorn.run(app, host=host, port=port)
