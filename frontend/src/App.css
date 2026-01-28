@@ -1,0 +1,160 @@
+.tna-bg {
+    background-color: #FFFFFF;
+}
+
+.tna-surface {
+    background-color: #FFFFFF;
+}
+
+.tna-surface-highlight {
+    background-color: #F9FAFB;
+}
+
+.tna-border {
+    border-color: #E5E7EB;
+}
+
+.tna-text-primary {
+    color: #000000;
+}
+
+.tna-text-secondary {
+    color: #6B7280;
+}
+
+.tna-card {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 0.125rem;
+}
+
+.tna-card:hover {
+    border-color: #D1D5DB;
+    transition: border-color 0.3s ease;
+}
+
+.tna-btn-primary {
+    background-color: #000000;
+    color: #FFFFFF;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 1.5rem;
+    border-radius: 0.125rem;
+    transition: background-color 0.2s ease;
+}
+
+.tna-btn-primary:hover {
+    background-color: #1F2937;
+}
+
+.tna-btn-secondary {
+    background-color: transparent;
+    border: 1px solid #D1D5DB;
+    color: #000000;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 1.5rem;
+    border-radius: 0.125rem;
+    transition: all 0.2s ease;
+}
+
+.tna-btn-secondary:hover {
+    background-color: #F9FAFB;
+}
+
+.tna-input {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    color: #000000;
+    border-radius: 0.125rem;
+}
+
+.tna-input:focus {
+    outline: none;
+    ring: 1px;
+    ring-color: #000000;
+}
+
+.tna-input::placeholder {
+    color: #9CA3AF;
+}
+
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    color: #71717a;
+    transition: all 0.2s ease;
+    border-left: 2px solid transparent;
+}
+
+.sidebar-item:hover {
+    color: #FFFFFF;
+    background-color: #18181b;
+    border-left-color: #0097FF;
+}
+
+.sidebar-item.active {
+    color: #FFFFFF;
+    background-color: #18181b;
+    border-left-color: #FF3D3D;
+}
+
+/* Calendar Styles */
+.rbc-calendar {
+    font-family: 'Manrope', sans-serif;
+}
+
+.rbc-header {
+    padding: 10px 3px;
+    font-weight: 700;
+    font-size: 14px;
+    text-transform: uppercase;
+    color: #000000;
+    border-bottom: 2px solid #E5E7EB;
+}
+
+.rbc-today {
+    background-color: #FEF3C7;
+}
+
+.rbc-event {
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.rbc-event-label {
+    font-size: 11px;
+}
+
+.rbc-toolbar button {
+    color: #000000;
+    border: 1px solid #E5E7EB;
+    background-color: #FFFFFF;
+    padding: 6px 12px;
+    font-family: 'Chivo', sans-serif;
+    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.rbc-toolbar button:hover {
+    background-color: #F9FAFB;
+}
+
+.rbc-toolbar button.rbc-active {
+    background-color: #000000;
+    color: #FFFFFF;
+}
+
+.rbc-time-slot {
+    min-height: 40px;
+}
+
+.rbc-timeslot-group {
+    border-bottom: 1px solid #F3F4F6;
+}

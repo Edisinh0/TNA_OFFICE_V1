@@ -1,0 +1,62 @@
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (1054, "Unknown column 'requests.type' in 'field list'")
+[SQL: SELECT requests.id AS requests_id, requests.type AS requests_type, requests.name AS requests_name, requests.email AS requests_email, requests.phone AS requests_phone, requests.company AS requests_company, requests.message AS requests_message, requests.source AS requests_source, requests.status AS requests_status, requests.assigned_to AS requests_assigned_to, requests.notes AS requests_notes, requests.created_at AS requests_created_at 
+FROM requests ORDER BY requests.created_at DESC]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+INFO:     127.0.0.1:52430 - "GET /api/requests HTTP/1.1" 500 Internal Server Error
+[stderr] ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/eddiecerpa/Downloads/TNAOffice_MariaDB-2/backend/venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/eddiecerpa/Downloads/TNAOffice_MariaDB-2/backend/venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+--
+pymysql.err.OperationalError: (1054, "Unknown column 'requests.type' in 'field list'")
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/eddiecerpa/Downloads/TNAOffice_MariaDB-2/backend/venv/lib/python3.14/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+--
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (1054, "Unknown column 'requests.type' in 'field list'")
+[SQL: SELECT requests.id AS requests_id, requests.type AS requests_type, requests.name AS requests_name, requests.email AS requests_email, requests.phone AS requests_phone, requests.company AS requests_company, requests.message AS requests_message, requests.source AS requests_source, requests.status AS requests_status, requests.assigned_to AS requests_assigned_to, requests.notes AS requests_notes, requests.created_at AS requests_created_at 
+FROM requests ORDER BY requests.created_at DESC]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+INFO:     127.0.0.1:52467 - "GET /api/requests HTTP/1.1" 500 Internal Server Error
+[stderr] ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/eddiecerpa/Downloads/TNAOffice_MariaDB-2/backend/venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/eddiecerpa/Downloads/TNAOffice_MariaDB-2/backend/venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+--
+pymysql.err.OperationalError: (1054, "Unknown column 'requests.type' in 'field list'")
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/eddiecerpa/Downloads/TNAOffice_MariaDB-2/backend/venv/lib/python3.14/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+--
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (1054, "Unknown column 'requests.type' in 'field list'")
+[SQL: SELECT requests.id AS requests_id, requests.type AS requests_type, requests.name AS requests_name, requests.email AS requests_email, requests.phone AS requests_phone, requests.company AS requests_company, requests.message AS requests_message, requests.source AS requests_source, requests.status AS requests_status, requests.assigned_to AS requests_assigned_to, requests.notes AS requests_notes, requests.created_at AS requests_created_at 
+FROM requests ORDER BY requests.created_at DESC]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

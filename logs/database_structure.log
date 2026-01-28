@@ -1,0 +1,209 @@
+=== bookings ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+resource_type	enum('room','booth')	NO		NULL	
+resource_id	varchar(36)	NO		NULL	
+resource_name	varchar(100)	YES		NULL	
+client_name	varchar(255)	NO		NULL	
+client_email	varchar(255)	YES		NULL	
+client_phone	varchar(50)	YES		NULL	
+date	date	YES		NULL	
+start_time	time	YES		NULL	
+end_time	time	YES		NULL	
+duration_hours	decimal(4,2)	YES		NULL	
+total_price	decimal(10,2)	YES		0.00	
+status	enum('pending','confirmed','cancelled','completed')	YES		pending	
+notes	text	YES		NULL	
+
+=== booths ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(100)	NO		NULL	
+hourly_rate	decimal(10,2)	YES		0.00	
+half_day_rate	decimal(10,2)	YES		0.00	
+full_day_rate	decimal(10,2)	YES		0.00	
+color	varchar(20)	YES		NULL	
+status	varchar(20)	YES		active	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== categories ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(100)	NO		NULL	
+description	text	YES		NULL	
+parent_id	varchar(36)	YES	MUL	NULL	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== client_documents ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+client_id	varchar(36)	NO	MUL	NULL	
+name	varchar(255)	NO		NULL	
+file_url	text	YES		NULL	
+document_type	varchar(100)	YES		NULL	
+expiry_date	date	YES		NULL	
+notifications_enabled	tinyint(1)	YES		0	
+notification_days	int	YES		30	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== clients ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+company_name	varchar(255)	NO	MUL	NULL	
+rut	varchar(20)	YES	MUL	NULL	
+business_type	varchar(100)	YES		NULL	
+address	text	YES		NULL	
+phone	varchar(50)	YES		NULL	
+email	varchar(255)	YES		NULL	
+contact_name	varchar(255)	YES		NULL	
+contact_phone	varchar(50)	YES		NULL	
+contact_email	varchar(255)	YES		NULL	
+notes	text	YES		NULL	
+is_active	tinyint(1)	YES		1	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== monthly_services ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+client_id	varchar(36)	NO	MUL	NULL	
+service_id	varchar(36)	YES	MUL	NULL	
+service_name	varchar(255)	NO		NULL	
+monthly_price	decimal(10,2)	YES		0.00	
+start_date	date	YES		NULL	
+end_date	date	YES		NULL	
+is_active	tinyint(1)	YES		1	
+notes	text	YES		NULL	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== monthly_services_catalog ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(255)	NO		NULL	
+description	text	YES		NULL	
+monthly_price	decimal(10,2)	YES		0.00	
+category	varchar(100)	YES		NULL	
+is_active	tinyint(1)	YES		1	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== offices ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+office_number	varchar(20)	NO		NULL	
+floor	int	YES		NULL	
+location	varchar(100)	YES		NULL	
+square_meters	decimal(10,2)	YES		NULL	
+capacity	int	YES		NULL	
+status	enum('available','occupied','maintenance')	YES		available	
+client_id	varchar(36)	YES	MUL	NULL	
+sale_value_uf	decimal(10,2)	YES		0.00	
+billed_value_uf	decimal(10,2)	YES		0.00	
+cost_uf	decimal(10,2)	YES		0.00	
+cost_difference_uf	decimal(10,2)	YES		0.00	
+contract_start	date	YES		NULL	
+contract_end	date	YES		NULL	
+
+=== parking_storage ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+number	varchar(20)	NO		NULL	
+type	enum('parking','storage')	YES		parking	
+location	varchar(100)	YES		NULL	
+status	enum('available','occupied','maintenance')	YES		available	
+client_id	varchar(36)	YES	MUL	NULL	
+sale_value_uf	decimal(10,2)	YES		0.00	
+billed_value_uf	decimal(10,2)	YES		0.00	
+cost_uf	decimal(10,2)	YES		0.00	
+notes	text	YES		NULL	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== products ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(255)	NO		NULL	
+description	text	YES		NULL	
+category_id	varchar(36)	YES	MUL	NULL	
+base_price	decimal(10,2)	YES		0.00	
+cost	decimal(10,2)	YES		0.00	
+unit	varchar(50)	YES		NULL	
+image_url	text	YES		NULL	
+is_active	tinyint(1)	YES		1	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== profiles ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(100)	NO	UNI	NULL	
+description	text	YES		NULL	
+allowed_modules	json	YES		NULL	
+is_system	tinyint(1)	YES		0	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== quote_templates ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(255)	NO		NULL	
+description	text	YES		NULL	
+content	longtext	YES		NULL	
+is_active	tinyint(1)	YES		1	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== quotes ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+quote_number	int	NO	UNI	NULL	auto_increment
+client_name	varchar(255)	NO		NULL	
+client_email	varchar(255)	YES		NULL	
+client_phone	varchar(50)	YES		NULL	
+company_name	varchar(255)	YES		NULL	
+items	json	YES		NULL	
+subtotal	decimal(12,2)	YES		0.00	
+tax	decimal(12,2)	YES		0.00	
+total	decimal(12,2)	YES		0.00	
+status	enum('draft','sent','accepted','rejected','expired')	YES		draft	
+valid_until	date	YES		NULL	
+notes	text	YES		NULL	
+created_by	varchar(36)	YES		NULL	
+
+=== requests ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+request_number	int	NO	UNI	NULL	auto_increment
+client_name	varchar(255)	NO		NULL	
+client_email	varchar(255)	YES		NULL	
+client_phone	varchar(50)	YES		NULL	
+company_name	varchar(255)	YES		NULL	
+request_type	varchar(100)	YES		NULL	
+description	text	YES		NULL	
+status	enum('pending','in_progress','completed','cancelled')	YES		pending	
+priority	enum('low','medium','high')	YES		medium	
+assigned_to	varchar(36)	YES		NULL	
+notes	text	YES		NULL	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+updated_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+=== rooms ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+name	varchar(100)	NO		NULL	
+capacity	int	YES		NULL	
+hourly_rate	decimal(10,2)	YES		0.00	
+half_day_rate	decimal(10,2)	YES		0.00	
+full_day_rate	decimal(10,2)	YES		0.00	
+amenities	json	YES		NULL	
+color	varchar(20)	YES		NULL	
+status	varchar(20)	YES		active	
+blocks_rooms	json	YES		NULL	
+related_rooms	json	YES		NULL	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+=== users ===
+Field	Type	Null	Key	Default	Extra
+id	varchar(36)	NO	PRI	NULL	
+email	varchar(255)	NO	UNI	NULL	
+password	varchar(255)	NO		NULL	
+name	varchar(255)	NO		NULL	
+role	enum('admin','comisionista','cliente')	YES		cliente	
+profile_id	varchar(36)	YES	MUL	NULL	
+commission_percentage	decimal(5,2)	YES		0.00	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+

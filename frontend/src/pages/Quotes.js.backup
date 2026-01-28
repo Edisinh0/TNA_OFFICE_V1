@@ -1,0 +1,696 @@
+import { useState, useEffect } from 'react';
+import apiClient from '../utils/api';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { FileText, Eye, Trash2, Building2, Users, Maximize2, DollarSign, Upload, X, Edit, User, FilePlus } from 'lucide-react';
+import { toast } from 'sonner';
+import QuoteTemplateEditor from '../components/QuoteTemplateEditor';
+import PDFAnalyzer from '../components/PDFAnalyzer';
+
+export const Quotes = () => {
+  const [quotes, setQuotes] = useState([]);
+  const [selectedQuote, setSelectedQuote] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editedOffices, setEditedOffices] = useState([]);
+  const [editedClientName, setEditedClientName] = useState('');
+  const [savingChanges, setSavingChanges] = useState(false);
+  
+  // Estados para plantillas
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateMode, setTemplateMode] = useState('list'); // list, create-manual, create-pdf, edit
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [analyzedData, setAnalyzedData] = useState(null);
+  const [showTemplateDetail, setShowTemplateDetail] = useState(false);
+
+  useEffect(() => {
+    loadQuotes();
+  }, []);
+
+  const loadQuotes = async () => {
+    try {
+      const response = await apiClient.get('/quotes');
+      setQuotes(response.data);
+    } catch (error) {
+      toast.error('Error al cargar cotizaciones');
+    }
+  };
+
+  const handleDelete = async (quoteId) => {
+    if (!window.confirm('¿Eliminar esta cotización?')) return;
+    try {
+      await apiClient.delete(`/quotes/${quoteId}`);
+      toast.success('Cotización eliminada');
+      loadQuotes();
+    } catch (error) {
+      toast.error('Error al eliminar cotización');
+    }
+  };
+
+  const handleEditOffice = (officeIndex, field, value) => {
+    const updated = [...editedOffices];
+    updated[officeIndex] = {
+      ...updated[officeIndex],
+      [field]: field === 'capacity' ? parseInt(value) || 0 : parseFloat(value) || 0
+    };
+    setEditedOffices(updated);
+  };
+
+  const calculateTotals = (offices) => {
+    return {
+      total_square_meters: offices.reduce((sum, o) => sum + o.square_meters, 0),
+      total_capacity: offices.reduce((sum, o) => sum + o.capacity, 0),
+      total_sale_value: offices.reduce((sum, o) => sum + o.sale_value_uf, 0),
+      total_cost: offices.reduce((sum, o) => sum + o.cost_uf, 0)
+    };
+  };
+
+  const handleSaveChanges = async () => {
+    if (!selectedQuote) return;
+    
+    setSavingChanges(true);
+    try {
+      await apiClient.put(`/quotes/${selectedQuote.id}`, {
+        client_name: editedClientName,
+        offices: editedOffices,
+        notes: selectedQuote.notes || '',
+        status: selectedQuote.status || 'pre-cotizacion'
+      });
+      
+      toast.success('Cambios guardados exitosamente');
+      
+      // Recargar datos
+      await loadQuotes();
+      const updatedQuote = await apiClient.get(`/quotes/${selectedQuote.id}`);
+      setSelectedQuote(updatedQuote.data);
+      setEditMode(false);
+      setSavingChanges(false);
+    } catch (error) {
+      console.error('Error al guardar cambios:', error);
+      toast.error(error.response?.data?.detail || 'Error al guardar cambios');
+      setSavingChanges(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditedOffices(selectedQuote?.offices || []);
+    setEditedClientName(selectedQuote?.client_name || '');
+    setEditMode(false);
+  };
+
+  const handleUploadImage = async (quoteId, file) => {
+    if (!file) return;
+    
+    // Validar tipo de archivo
+    if (!file.type.startsWith('image/')) {
+      toast.error('Por favor selecciona un archivo de imagen');
+      return;
+    }
+    
+    // Validar tamaño (máximo 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('La imagen no debe superar 5MB');
+      return;
+    }
+    
+    setUploadingImage(true);
+    toast.info('Procesando imagen...');
+    
+    try {
+      // Convertir a base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const base64Image = e.target.result;
+          
+          // Actualizar cotización con nueva imagen (JSON body)
+          await apiClient.put(`/quotes/${quoteId}`, {
+            floor_plan_screenshot: base64Image,
+            notes: selectedQuote?.notes || '',
+            status: selectedQuote?.status || 'pre-cotizacion'
+          });
+          
+          toast.success('Imagen actualizada exitosamente');
+          
+          // Recargar cotizaciones
+          await loadQuotes();
+          
+          // Actualizar la cotización seleccionada
+          const updatedQuote = await apiClient.get(`/quotes/${quoteId}`);
+          setSelectedQuote(updatedQuote.data);
+          
+          setUploadingImage(false);
+        } catch (error) {
+          console.error('Error al actualizar imagen:', error);
+          toast.error(error.response?.data?.detail || 'Error al actualizar la imagen');
+          setUploadingImage(false);
+        }
+      };
+      reader.onerror = () => {
+        toast.error('Error al leer el archivo');
+        setUploadingImage(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error al procesar imagen:', error);
+      toast.error('Error al procesar la imagen');
+      setUploadingImage(false);
+    }
+  };
+
+  const formatUF = (amount) => {
+    return new Intl.NumberFormat('es-CL', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount) + ' UF';
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-CL', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusBadge = (status) => {
+    const badges = {
+      'pre-cotizacion': { text: 'Pre-Cotización', class: 'bg-yellow-100 text-yellow-700' },
+      'enviada': { text: 'Enviada', class: 'bg-blue-100 text-blue-700' },
+      'aprobada': { text: 'Aprobada', class: 'bg-green-100 text-green-700' },
+      'rechazada': { text: 'Rechazada', class: 'bg-red-100 text-red-700' }
+    };
+    const badge = badges[status] || badges['pre-cotizacion'];
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${badge.class}`}>
+        {badge.text}
+      </span>
+    );
+  };
+
+  // ========== FUNCIONES PARA PLANTILLAS ==========
+  
+  const loadTemplates = async () => {
+    try {
+      const response = await apiClient.get('/templates');
+      setTemplates(response.data);
+    } catch (error) {
+      toast.error('Error al cargar plantillas');
+    }
+  };
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  const handleSaveManualTemplate = async (templateData) => {
+    setIsLoadingTemplate(true);
+    try {
+      if (templateMode === 'edit' && selectedTemplate) {
+        await apiClient.put(`/templates/${selectedTemplate.id}`, templateData);
+        toast.success('Plantilla actualizada');
+      } else {
+        await apiClient.post('/templates', {
+          ...templateData,
+          created_from: 'manual'
+        });
+        toast.success('Plantilla creada');
+      }
+      
+      setTemplateMode('list');
+      setSelectedTemplate(null);
+      await loadTemplates();
+    } catch (error) {
+      toast.error('Error al guardar plantilla');
+    } finally {
+      setIsLoadingTemplate(false);
+    }
+  };
+
+  const handleAnalysisComplete = (result) => {
+    setAnalyzedData(result);
+    toast.success('PDF analizado. Revisa el contenido y guarda.');
+  };
+
+  const handleSavePDFTemplate = async (templateData) => {
+    setIsLoadingTemplate(true);
+    try {
+      await apiClient.post('/templates', {
+        ...templateData,
+        created_from: 'pdf'
+      });
+      
+      toast.success('Plantilla creada desde PDF');
+      setAnalyzedData(null);
+      setTemplateMode('list');
+      await loadTemplates();
+    } catch (error) {
+      toast.error('Error al guardar plantilla desde PDF');
+    } finally {
+      setIsLoadingTemplate(false);
+    }
+  };
+
+  const handleEditTemplate = (template) => {
+    setSelectedTemplate(template);
+    setTemplateMode('edit');
+  };
+
+  const handleDeleteTemplate = async (templateId) => {
+    if (!window.confirm('¿Eliminar esta plantilla?')) return;
+    
+    try {
+      await apiClient.delete(`/templates/${templateId}`);
+      toast.success('Plantilla eliminada');
+      await loadTemplates();
+    } catch (error) {
+      toast.error('Error al eliminar plantilla');
+    }
+  };
+
+  const handleViewTemplateDetail = (template) => {
+    setSelectedTemplate(template);
+    setShowTemplateDetail(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-black text-gray-900 font-secondary uppercase">
+              Cotizaciones
+            </h1>
+            <p className="text-gray-600 font-primary">
+              Gestiona las cotizaciones de oficinas
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <FileText className="w-8 h-8 text-blue-600" />
+            <span className="text-3xl font-black text-blue-600 font-secondary">
+              {quotes.length}
+            </span>
+          </div>
+        </div>
+
+        {/* Lista de Cotizaciones */}
+        <Card className="bg-white border-gray-200 rounded-sm shadow-sm">
+          <CardHeader className="border-b border-gray-200">
+            <CardTitle className="font-secondary uppercase text-black">
+              Todas las Cotizaciones
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {quotes.length > 0 ? (
+              <div className="divide-y divide-gray-200">
+                {quotes.map((quote) => (
+                  <div
+                    key={quote.id}
+                    className="p-6 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-3">
+                          <h3 className="text-2xl font-black text-black font-secondary">
+                            {quote.quote_number}
+                          </h3>
+                          {getStatusBadge(quote.status)}
+                          {quote.client_name && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 rounded-full">
+                              <User className="w-4 h-4 text-purple-700" />
+                              <span className="text-xs font-semibold text-purple-700">
+                                {quote.client_name}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                          <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="w-4 h-4 text-gray-400" />
+                            <span className="text-gray-600 font-primary">
+                              <strong className="text-black">{quote.total_offices}</strong> oficina(s)
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Maximize2 className="w-4 h-4 text-gray-400" />
+                            <span className="text-gray-600 font-primary">
+                              <strong className="text-black">{quote.total_square_meters.toFixed(1)}m²</strong>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Users className="w-4 h-4 text-gray-400" />
+                            <span className="text-gray-600 font-primary">
+                              <strong className="text-black">{quote.total_capacity}</strong> personas
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <DollarSign className="w-4 h-4 text-green-600" />
+                            <span className="text-green-600 font-primary font-bold">
+                              {formatUF(quote.total_sale_value)}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="text-xs text-gray-500 font-primary">
+                          Creada por: {quote.created_by} • {formatDate(quote.created_at)}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 ml-4">
+                        <Button
+                          onClick={() => {
+                            setSelectedQuote(quote);
+                            setEditedOffices(quote.offices);
+                            setEditedClientName(quote.client_name || '');
+                            setEditMode(false);
+                            setShowDetailModal(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="border-blue-300 text-blue-600 hover:bg-blue-50 rounded-sm"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Ver Detalle
+                        </Button>
+                        <Button
+                          onClick={() => handleDelete(quote.id)}
+                          variant="outline"
+                          size="sm"
+                          className="border-red-300 text-red-600 hover:bg-red-50 rounded-sm"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-12 text-center text-gray-500">
+                <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <p className="text-lg font-primary">No hay cotizaciones aún</p>
+                <p className="text-sm font-primary">
+                  Ve a "Oficinas" y selecciona oficinas para crear una cotización
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Modal de Detalle */}
+        {selectedQuote && (
+          <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-white">
+              <DialogHeader>
+                <DialogTitle className="font-secondary uppercase text-black text-2xl">
+                  Cotización {selectedQuote.quote_number}
+                </DialogTitle>
+              </DialogHeader>
+              
+              <div className="space-y-6">
+                {/* Cliente Potencial */}
+                <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <User className="w-5 h-5 text-purple-600" />
+                        <div>
+                          <div className="text-xs text-gray-600 font-primary mb-1">Cliente Potencial</div>
+                          {editMode ? (
+                            <Input
+                              value={editedClientName}
+                              onChange={(e) => setEditedClientName(e.target.value)}
+                              placeholder="Nombre del cliente potencial..."
+                              className="bg-white border-purple-300 text-black font-primary font-semibold"
+                            />
+                          ) : (
+                            <div className="text-lg font-bold text-black font-secondary">
+                              {selectedQuote.client_name || '(Sin nombre)'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                {/* Screenshot del Plano */}
+                <Card className="bg-gray-50 border-gray-200">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="font-primary text-black text-sm">
+                      Plano con Oficinas Seleccionadas
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Label
+                        htmlFor={`upload-image-${selectedQuote.id}`}
+                        className="cursor-pointer"
+                      >
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                          disabled={uploadingImage}
+                          onClick={() => document.getElementById(`upload-image-${selectedQuote.id}`).click()}
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          {selectedQuote.floor_plan_screenshot ? 'Reemplazar Imagen' : 'Subir Imagen'}
+                        </Button>
+                      </Label>
+                      <Input
+                        id={`upload-image-${selectedQuote.id}`}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadImage(selectedQuote.id, file);
+                          }
+                        }}
+                      />
+                      {selectedQuote.floor_plan_screenshot && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                          onClick={async () => {
+                            if (window.confirm('¿Eliminar la imagen del plano?')) {
+                              try {
+                                await apiClient.put(`/quotes/${selectedQuote.id}`, {
+                                  floor_plan_screenshot: '',
+                                  notes: selectedQuote.notes || '',
+                                  status: selectedQuote.status
+                                });
+                                toast.success('Imagen eliminada');
+                                await loadQuotes();
+                                const updatedQuote = await apiClient.get(`/quotes/${selectedQuote.id}`);
+                                setSelectedQuote(updatedQuote.data);
+                              } catch (error) {
+                                toast.error('Error al eliminar imagen');
+                              }
+                            }
+                          }}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {selectedQuote.floor_plan_screenshot ? (
+                      <img
+                        src={selectedQuote.floor_plan_screenshot}
+                        alt="Plano de oficinas"
+                        className="w-full h-auto rounded-lg border-2 border-gray-300"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-gray-300 rounded-lg">
+                        <Upload className="w-12 h-12 text-gray-400 mb-4" />
+                        <p className="text-gray-600 font-primary text-center">
+                          No hay imagen del plano. Haz clic en "Subir Imagen" para agregar una.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                
+                {/* Oficinas */}
+                <Card className="bg-white border-gray-200">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="font-secondary uppercase text-black">
+                      Oficinas ({editMode ? editedOffices.length : selectedQuote.total_offices})
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      {!editMode ? (
+                        <Button
+                          onClick={() => setEditMode(true)}
+                          variant="outline"
+                          size="sm"
+                          className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Editar Valores
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            onClick={handleCancelEdit}
+                            variant="outline"
+                            size="sm"
+                            className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                            disabled={savingChanges}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            onClick={handleSaveChanges}
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            disabled={savingChanges}
+                          >
+                            {savingChanges ? 'Guardando...' : 'Guardar Cambios'}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {(editMode ? editedOffices : selectedQuote.offices).map((office, index) => (
+                        <div
+                          key={office.office_id}
+                          className={`flex items-center justify-between p-3 rounded-lg ${
+                            editMode ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <span className="font-secondary font-bold text-lg">
+                              {office.office_number}
+                            </span>
+                            <span className="text-sm text-gray-600">{office.location}</span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span><strong>{office.square_meters}m²</strong></span>
+                            
+                            {/* Capacidad - Editable */}
+                            <div className="flex items-center gap-2">
+                              {editMode ? (
+                                <Input
+                                  type="number"
+                                  value={office.capacity}
+                                  onChange={(e) => handleEditOffice(index, 'capacity', e.target.value)}
+                                  className="w-20 h-8 text-sm bg-white border-blue-300"
+                                  min="0"
+                                />
+                              ) : (
+                                <strong>{office.capacity}</strong>
+                              )}
+                              <span className="text-gray-500">pers.</span>
+                            </div>
+                            
+                            {/* Valor de Venta - Editable */}
+                            <div className="flex items-center gap-2">
+                              {editMode ? (
+                                <Input
+                                  type="number"
+                                  value={office.sale_value_uf}
+                                  onChange={(e) => handleEditOffice(index, 'sale_value_uf', e.target.value)}
+                                  className="w-24 h-8 text-sm bg-white border-green-300 text-green-600 font-bold"
+                                  min="0"
+                                  step="0.01"
+                                />
+                              ) : (
+                                <span className="text-green-600 font-bold">
+                                  {formatUF(office.sale_value_uf)}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <span className="text-orange-600 font-bold">
+                              Costo: {formatUF(office.cost_uf)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                {/* Totales */}
+                <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+                  <CardContent className="p-6">
+                    <h3 className="font-secondary uppercase text-black mb-4 text-lg">
+                      Resumen Total {editMode && <span className="text-sm text-blue-600">(Actualizado en tiempo real)</span>}
+                    </h3>
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="text-center">
+                        <div className="text-sm text-gray-600 mb-1">Total m²</div>
+                        <div className="text-3xl font-black text-black font-secondary">
+                          {(editMode 
+                            ? calculateTotals(editedOffices).total_square_meters 
+                            : selectedQuote.total_square_meters
+                          ).toFixed(1)}m²
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm text-gray-600 mb-1">Capacidad Total</div>
+                        <div className="text-3xl font-black text-black font-secondary">
+                          {editMode 
+                            ? calculateTotals(editedOffices).total_capacity 
+                            : selectedQuote.total_capacity}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm text-gray-600 mb-1">Valor Total</div>
+                        <div className="text-3xl font-black text-green-600 font-secondary">
+                          {formatUF(editMode 
+                            ? calculateTotals(editedOffices).total_sale_value 
+                            : selectedQuote.total_sale_value)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm text-gray-600 mb-1">Costo Total</div>
+                        <div className="text-3xl font-black text-orange-600 font-secondary">
+                          {formatUF(editMode 
+                            ? calculateTotals(editedOffices).total_cost 
+                            : selectedQuote.total_cost)}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                {/* Notas */}
+                {selectedQuote.notes && (
+                  <Card className="bg-gray-50 border-gray-200">
+                    <CardHeader>
+                      <CardTitle className="font-primary text-black text-sm">Notas</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-gray-700 font-primary">{selectedQuote.notes}</p>
+                    </CardContent>
+                  </Card>
+                )}
+                
+                {/* Info de Creación */}
+                <div className="text-sm text-gray-500 font-primary text-center">
+                  Creada por {selectedQuote.created_by} el {formatDate(selectedQuote.created_at)}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+    </div>
+  );
+};
