@@ -404,11 +404,11 @@ export const ParkingStorage = () => {
                     <td className="p-4 font-primary text-gray-700">
                       {item.client_name || <span className="text-gray-400 italic">Sin asignar</span>}
                     </td>
-                    <td className="p-4 text-right font-primary font-bold text-green-600">{item.billed_value_uf.toFixed(2)}</td>
-                    <td className="p-4 text-right font-primary text-gray-600">{item.cost_uf.toFixed(2)}</td>
-                    <td className="p-4 text-right font-primary text-orange-600">{item.sale_value_uf.toFixed(2)}</td>
-                    <td className={`p-4 text-right font-primary font-bold ${(item.billed_value_uf - item.cost_uf) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {(item.billed_value_uf - item.cost_uf).toFixed(2)}
+                    <td className="p-4 text-right font-primary font-bold text-green-600">{(item.billed_value_uf || 0).toFixed(2)}</td>
+                    <td className="p-4 text-right font-primary text-gray-600">{(item.cost_uf || 0).toFixed(2)}</td>
+                    <td className="p-4 text-right font-primary text-orange-600">{(item.sale_value_uf || 0).toFixed(2)}</td>
+                    <td className={`p-4 text-right font-primary font-bold ${((item.billed_value_uf || 0) - (item.cost_uf || 0)) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {((item.billed_value_uf || 0) - (item.cost_uf || 0)).toFixed(2)}
                     </td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded text-xs font-primary ${

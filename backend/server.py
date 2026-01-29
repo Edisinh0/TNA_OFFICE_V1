@@ -1184,6 +1184,12 @@ def delete_parking_storage(item_id: str, db: Session = Depends(get_db), current_
 
 # ============ ROOMS ENDPOINTS ============
 
+@api_router.get("/rooms/public")
+def get_rooms_public(db: Session = Depends(get_db)):
+    """Endpoint público para obtener salas (sin autenticación)"""
+    rooms = db.query(RoomDB).filter(RoomDB.status == 'active').all()
+    return [db_to_dict(r) for r in rooms]
+
 @api_router.get("/rooms")
 def get_rooms(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     rooms = db.query(RoomDB).filter(RoomDB.status == 'active').all()
@@ -1269,11 +1275,25 @@ def update_booth(booth_id: str, data: dict, db: Session = Depends(get_db), curre
 @api_router.get("/bookings")
 def get_bookings(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     bookings = db.query(BookingDB).all()
-    return [db_to_dict(b) for b in bookings]
+    result = []
+    for b in bookings:
+        booking_dict = db_to_dict(b)
+        # Agregar campos combinados para el calendario del frontend
+        if b.date and b.start_time:
+            booking_dict['start_datetime'] = f"{b.date.isoformat()}T{b.start_time.strftime('%H:%M:%S')}"
+        if b.date and b.end_time:
+            booking_dict['end_datetime'] = f"{b.date.isoformat()}T{b.end_time.strftime('%H:%M:%S')}"
+        result.append(booking_dict)
+    return result
 
 @api_router.post("/bookings")
 def create_booking(data: BookingCreate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     try:
+        # Extraer fecha de start_time si date no se proporciona
+        booking_date = parse_date(data.date)
+        if not booking_date and data.start_time and 'T' in data.start_time:
+            booking_date = parse_date(data.start_time)
+
         booking = BookingDB(
             id=str(uuid.uuid4()),
             resource_type=data.resource_type,
@@ -1283,7 +1303,7 @@ def create_booking(data: BookingCreate, db: Session = Depends(get_db), current_u
             client_name=data.client_name,
             client_email=data.client_email,
             client_phone=data.client_phone,
-            date=parse_date(data.date),
+            date=booking_date,
             start_time=parse_time(data.start_time),
             end_time=parse_time(data.end_time),
             status=data.status,
@@ -1326,6 +1346,9 @@ def update_booking(booking_id: str, data: BookingUpdate, db: Session = Depends(g
             booking.date = parse_date(data.date)
         if data.start_time is not None:
             booking.start_time = parse_time(data.start_time)
+            # Si start_time contiene fecha (formato ISO), también actualizar el campo date
+            if 'T' in data.start_time:
+                booking.date = parse_date(data.start_time)
         if data.end_time is not None:
             booking.end_time = parse_time(data.end_time)
         if data.total_price is not None:
@@ -1337,7 +1360,14 @@ def update_booking(booking_id: str, data: BookingUpdate, db: Session = Depends(g
 
         db.commit()
         db.refresh(booking)
-        return db_to_dict(booking)
+
+        # Agregar campos combinados para el frontend
+        result = db_to_dict(booking)
+        if booking.date and booking.start_time:
+            result['start_datetime'] = f"{booking.date.isoformat()}T{booking.start_time.strftime('%H:%M:%S')}"
+        if booking.date and booking.end_time:
+            result['end_datetime'] = f"{booking.date.isoformat()}T{booking.end_time.strftime('%H:%M:%S')}"
+        return result
     except HTTPException:
         raise
     except Exception as e:

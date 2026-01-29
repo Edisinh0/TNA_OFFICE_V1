@@ -474,9 +474,9 @@ export const MonthlyServices = () => {
                             {contract.client_name || <span className="text-gray-400 italic">Sin asignar</span>}
                           </div>
                         </td>
-                        <td className="p-4 text-right font-primary font-bold text-green-600">{contract.billed_value_uf.toFixed(2)}</td>
-                        <td className="p-4 text-right font-primary text-gray-600">{contract.cost_uf.toFixed(2)}</td>
-                        <td className="p-4 text-right font-primary text-orange-600">{contract.sale_value_uf.toFixed(2)}</td>
+                        <td className="p-4 text-right font-primary font-bold text-green-600">{(contract.billed_value_uf || 0).toFixed(2)}</td>
+                        <td className="p-4 text-right font-primary text-gray-600">{(contract.cost_uf || 0).toFixed(2)}</td>
+                        <td className="p-4 text-right font-primary text-orange-600">{(contract.sale_value_uf || 0).toFixed(2)}</td>
                         <td className="p-4">
                           <span className={`px-2 py-1 rounded text-xs font-primary ${
                             contract.status === 'active' 
@@ -555,8 +555,8 @@ export const MonthlyServices = () => {
                         <td className="p-4 font-primary text-gray-500 text-sm max-w-[200px] truncate" title={item.description}>
                           {item.description || <span className="italic text-gray-400">Sin descripción</span>}
                         </td>
-                        <td className="p-4 text-right font-primary text-gray-600">{item.cost_uf.toFixed(2)}</td>
-                        <td className="p-4 text-right font-primary font-bold text-orange-600">{item.sale_value_uf.toFixed(2)}</td>
+                        <td className="p-4 text-right font-primary text-gray-600">{(item.cost_uf || 0).toFixed(2)}</td>
+                        <td className="p-4 text-right font-primary font-bold text-orange-600">{(item.sale_value_uf || 0).toFixed(2)}</td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end gap-2">
                             <Button
@@ -622,7 +622,7 @@ export const MonthlyServices = () => {
                 <option value="">-- Escribir manualmente --</option>
                 {catalog.map(service => (
                   <option key={service.id} value={service.id}>
-                    {service.name} - {service.sale_value_uf.toFixed(2)} UF
+                    {service.name} - {(service.sale_value_uf || 0).toFixed(2)} UF
                   </option>
                 ))}
               </select>

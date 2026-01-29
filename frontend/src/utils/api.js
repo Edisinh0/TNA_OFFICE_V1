@@ -15,10 +15,10 @@
 import axios from 'axios';
 import { getAuthHeader, logout } from './auth';
 
-// Variable de entorno para Vite (debe comenzar con VITE_)
-// En desarrollo: VITE_API_URL=http://localhost:8001/api
-// En produccion: VITE_API_URL=https://tu-dominio.com/api
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001/api';
+// Variable de entorno para Create React App (debe comenzar con REACT_APP_)
+// En desarrollo: REACT_APP_API_URL=http://localhost:8001/api
+// En produccion: REACT_APP_API_URL=https://tu-dominio.com/api
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8001/api';
 
 // Crear instancia de Axios con configuracion base
 const apiClient = axios.create({

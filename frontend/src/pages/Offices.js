@@ -1143,7 +1143,7 @@ export const Offices = () => {
                             <p className={`text-sm font-bold font-primary ${
                               marginIsNegative ? 'text-red-600' : 'text-green-600'
                             }`}>
-                              {office.margin_percentage.toFixed(2)}%
+                              {(office.margin_percentage || 0).toFixed(2)}%
                             </p>
                             {hasNoIncome && (
                               <span className="text-xs text-red-500 font-primary ml-1">*</span>

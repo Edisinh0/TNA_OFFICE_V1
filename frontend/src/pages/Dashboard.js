@@ -147,6 +147,12 @@ export const Dashboard = () => {
       setRooms(roomsRes.data);
       setBooths(boothsRes.data);
       setBookings(bookingsRes.data);
+
+      // DEBUG: Verificar datos de reservas
+      console.log('📅 Dashboard - Bookings cargadas:', bookingsRes.data.length);
+      if (bookingsRes.data.length > 0) {
+        console.log('📅 Primera reserva:', bookingsRes.data[0]);
+      }
       
       const bookingRequests = requestsRes.data.filter(
         r => r.request_type === 'booking' && r.status === 'new'
@@ -318,6 +324,19 @@ export const Dashboard = () => {
       return;
     }
 
+    // Obtener datetime completo para el formulario
+    const getStartDateTime = () => {
+      if (booking.start_datetime) return moment(booking.start_datetime).format('YYYY-MM-DDTHH:mm');
+      if (booking.date && booking.start_time) return moment(`${booking.date}T${booking.start_time}`).format('YYYY-MM-DDTHH:mm');
+      return '';
+    };
+
+    const getEndDateTime = () => {
+      if (booking.end_datetime) return moment(booking.end_datetime).format('YYYY-MM-DDTHH:mm');
+      if (booking.date && booking.end_time) return moment(`${booking.date}T${booking.end_time}`).format('YYYY-MM-DDTHH:mm');
+      return '';
+    };
+
     setEditingBooking(booking);
     setBookingForm({
       resource_type: booking.resource_type,
@@ -326,8 +345,8 @@ export const Dashboard = () => {
       client_name: booking.client_name,
       client_email: booking.client_email,
       client_phone: booking.client_phone || '',
-      start_time: moment(booking.start_time).format('YYYY-MM-DDTHH:mm'),
-      end_time: moment(booking.end_time).format('YYYY-MM-DDTHH:mm'),
+      start_time: getStartDateTime(),
+      end_time: getEndDateTime(),
       notes: booking.notes || '',
       status: booking.status
     });
@@ -438,18 +457,31 @@ export const Dashboard = () => {
           name: booking.resource_name,
           color: '#6b7280'
         };
-        
+
         const statusIcon = {
           'confirmed': '✓',
           'pending': '⏱',
           'blocked': '🔒'
         }[booking.status] || '';
-        
+
+        // Parsear fechas: usar start_datetime/end_datetime o combinar date + start_time/end_time
+        const getStartDate = () => {
+          if (booking.start_datetime) return new Date(booking.start_datetime);
+          if (booking.date && booking.start_time) return new Date(`${booking.date}T${booking.start_time}`);
+          return new Date();
+        };
+
+        const getEndDate = () => {
+          if (booking.end_datetime) return new Date(booking.end_datetime);
+          if (booking.date && booking.end_time) return new Date(`${booking.date}T${booking.end_time}`);
+          return new Date();
+        };
+
         return {
           id: booking.id,
           title: `${statusIcon} ${resourceInfo.name} - ${booking.client_name}`,
-          start: new Date(booking.start_time),
-          end: new Date(booking.end_time),
+          start: getStartDate(),
+          end: getEndDate(),
           resource: booking,
           resourceInfo: resourceInfo,
           isRequest: false

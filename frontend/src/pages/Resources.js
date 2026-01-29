@@ -286,30 +286,30 @@ export const Resources = () => {
 
   const calendarEvents = useMemo(() => {
     if (!selectedResource) return [];
-    
+
     return getResourceBookings(selectedResource.id).map(booking => {
-      // Helper para parsear fechas que pueden venir en diferentes formatos
-      const parseBookingDate = (dateStr, timeStr) => {
-        // Si ya es una fecha ISO completa, usarla directamente
-        if (dateStr && dateStr.includes('T')) {
-          return new Date(dateStr);
-        }
-        // Si hay fecha y hora separadas (formato MariaDB)
-        if (booking.date && timeStr) {
-          return new Date(`${booking.date}T${timeStr}`);
-        }
-        // Fallback: intentar parsear directamente
-        return new Date(dateStr);
+      // Usar los campos combinados start_datetime/end_datetime del backend
+      // o combinar date + start_time/end_time como fallback
+      const getStartDate = () => {
+        if (booking.start_datetime) return new Date(booking.start_datetime);
+        if (booking.date && booking.start_time) return new Date(`${booking.date}T${booking.start_time}`);
+        return new Date();
+      };
+
+      const getEndDate = () => {
+        if (booking.end_datetime) return new Date(booking.end_datetime);
+        if (booking.date && booking.end_time) return new Date(`${booking.date}T${booking.end_time}`);
+        return new Date();
       };
 
       return {
         id: booking.id,
         title: `${booking.client_name} - ${booking.status}`,
-        start: parseBookingDate(booking.start_time, booking.start_time),
-        end: parseBookingDate(booking.end_time, booking.end_time),
+        start: getStartDate(),
+        end: getEndDate(),
         resource: booking,
         style: {
-          backgroundColor: booking.status === 'confirmed' ? '#10b981' : 
+          backgroundColor: booking.status === 'confirmed' ? '#10b981' :
                           booking.status === 'pending' ? '#f59e0b' : '#ef4444'
         }
       };
