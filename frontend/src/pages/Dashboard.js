@@ -108,8 +108,8 @@ export const Dashboard = () => {
   const fetchUFValue = async () => {
     setLoadingUF(true);
     try {
-      const response = await fetch('https://mindicador.cl/api/uf');
-      const data = await response.json();
+      const response = await apiClient.get('/uf');
+      const data = response.data;
       if (data && data.serie && data.serie.length > 0) {
         const latestUF = data.serie[0];
         const newUfValue = {

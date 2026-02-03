@@ -98,8 +98,8 @@ export const Clients = () => {
 
   const loadUfValue = async () => {
     try {
-      const response = await fetch('https://mindicador.cl/api/uf');
-      const data = await response.json();
+      const response = await apiClient.get('/uf');
+      const data = response.data;
       if (data.serie && data.serie.length > 0) {
         setUfValue(data.serie[0].valor);
       }

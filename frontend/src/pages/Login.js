@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { Calendar, Users, Package, TrendingUp, ArrowLeft } from 'lucide-react';
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_tnaworkspace/artifacts/joeekgrg_Logo_TNAOffice%20positivo.png';
+const LOGO_URL = '/logo-tna.png';
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -210,11 +210,6 @@ export const Login = () => {
             </Link>
           </div>
 
-          <div className="mt-8 p-4 bg-[#0A0A0A] border border-zinc-800 rounded-sm">
-            <p className="text-zinc-500 text-xs font-primary text-center">
-              Demo: admin@tnaoffice.cl / admin123
-            </p>
-          </div>
         </div>
       </div>
     </div>

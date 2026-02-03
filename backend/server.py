@@ -26,7 +26,8 @@ from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.pool import QueuePool
 from dotenv import load_dotenv
 from pathlib import Path
-
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.staticfiles import StaticFiles
 # ============ CONFIGURACIÓN DE LOGGING ============
 
 logging.basicConfig(
@@ -673,12 +674,18 @@ async def lifespan(app: FastAPI):
     logger.info("Cerrando TNA Office API...")
     engine.dispose()
 
+# --- MODIFICACIÓN EN SERVER.PY ---
+
+# 1. Definición de la App sin rutas automáticas
 app = FastAPI(
     title="TNA Office API",
-    description="API para gestión de oficinas TNA Office",
     version="2.0.0",
-    lifespan=lifespan
+    docs_url=None,     # Desactivado
+    redoc_url=None,    # Desactivado
+    openapi_url=None   # Desactivado
 )
+
+
 
 # CORS Configuration
 cors_origins_str = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173')
@@ -703,6 +710,8 @@ class CORSErrorMiddleware(BaseHTTPMiddleware):
                 response.headers["Access-Control-Allow-Methods"] = "*"
                 response.headers["Access-Control-Allow-Headers"] = "*"
             return response
+
+
 
 # Añadir middleware CORS (el orden es importante - este va primero)
 app.add_middleware(
@@ -744,6 +753,22 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return response
 
 api_router = APIRouter(prefix="/api")
+
+# ============ UF PROXY ENDPOINT ============
+
+@api_router.get("/uf")
+def get_uf_value():
+    """Proxy para obtener el valor de la UF desde mindicador.cl"""
+    import urllib.request
+    import json as json_module
+    try:
+        req = urllib.request.Request('https://mindicador.cl/api/uf', headers={'User-Agent': 'TNA-Office/2.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json_module.loads(resp.read().decode())
+            return data
+    except Exception as e:
+        logger.error(f"Error obteniendo valor UF: {e}")
+        raise HTTPException(status_code=502, detail="No se pudo obtener el valor de la UF")
 
 # ============ AUTH ENDPOINTS ============
 
@@ -2449,6 +2474,7 @@ def health_check():
 @app.get("/")
 def root():
     return {"message": "TNA Office API v2.0.0", "status": "running"}
+    
 
 # ============ ENTRY POINT ============
 
@@ -2457,3 +2483,5 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 8001))
     host = os.environ.get('HOST', '0.0.0.0')
     uvicorn.run(app, host=host, port=port)
+
+

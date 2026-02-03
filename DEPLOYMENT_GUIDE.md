@@ -171,27 +171,29 @@ npm install
 cp .env.example .env
 ```
 
-Editar `.env`:
+Editar `.env.production` (ya creado en el proyecto):
 ```env
-VITE_API_URL=https://api.tu-dominio.com/api
-VITE_APP_MODE=production
+REACT_APP_API_URL=https://api.tu-dominio.com/api
+REACT_APP_MODE=production
+REACT_APP_NAME=TNA Office
+REACT_APP_VERSION=1.0.0
 ```
 
 Compilar:
 ```bash
-npm run build
+yarn build
 ```
 
-Esto genera la carpeta `dist/` con los archivos estaticos.
+Esto genera la carpeta `build/` con los archivos estáticos.
 
 ### 4.2 Subir archivos al servidor
 
 1. Ir a **cPanel > File Manager**
 2. Navegar a `public_html` (o el directorio de tu dominio)
 3. **Eliminar archivos existentes** (hacer backup primero si es necesario)
-4. Subir TODO el contenido de la carpeta `dist/`:
+4. Subir TODO el contenido de la carpeta `build/`:
    - `index.html`
-   - `assets/` (carpeta completa)
+   - `static/` (carpeta completa con css y js)
    - Cualquier otro archivo generado
 5. Subir el archivo `.htaccess` desde `frontend/.htaccess`
 
@@ -244,7 +246,7 @@ curl https://api.tu-dominio.com/health
 # Login (ajustar credenciales)
 curl -X POST https://api.tu-dominio.com/api/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@tnaoffice.com","password":"admin123"}'
+  -d '{"email":"admin@tnaoffice.cl","password":"demo123"}'
 ```
 
 ### 6.2 Verificar Frontend
@@ -252,8 +254,8 @@ curl -X POST https://api.tu-dominio.com/api/login \
 1. Visitar `https://tu-dominio.com`
 2. Verificar que carga la pagina de login
 3. Intentar iniciar sesion con:
-   - Email: `admin@tnaoffice.com`
-   - Password: `admin123`
+   - Email: `admin@tnaoffice.cl`
+   - Password: `demo123`
 4. Navegar por las diferentes secciones
 
 ### 6.3 Verificar rutas SPA
@@ -284,7 +286,7 @@ curl -X POST https://api.tu-dominio.com/api/login \
 
 1. Abrir consola del navegador (F12)
 2. Verificar errores de red
-3. Asegurar que `VITE_API_URL` apunta al backend correcto
+3. Asegurar que `REACT_APP_API_URL` apunta al backend correcto
 4. Recompilar el frontend si se cambio el `.env`
 
 ### Error 404 al refrescar paginas
@@ -319,8 +321,8 @@ curl -X POST https://api.tu-dominio.com/api/login \
 **IMPORTANTE:** Cambiar estas credenciales inmediatamente despues del primer login.
 
 - **Usuario Admin:**
-  - Email: `admin@tnaoffice.com`
-  - Password: `admin123`
+  - Email: `admin@tnaoffice.cl`
+  - Password: `demo123`
 
 Para cambiar la contrasena del admin:
 1. Iniciar sesion
@@ -366,9 +368,9 @@ mysql -u cpaneluser_tna_user -p -e "SELECT 1"
 └── public_html/             # Frontend
     ├── index.html
     ├── .htaccess
-    └── assets/
-        ├── index-xxxxx.js
-        └── index-xxxxx.css
+    └── static/
+        ├── css/
+        └── js/
 ```
 
 ---

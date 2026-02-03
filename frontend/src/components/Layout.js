@@ -40,7 +40,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_tnaworkspace/artifacts/joeekgrg_Logo_TNAOffice%20positivo.png';
+const LOGO_URL = '/logo-tna.png';
 
 const MENU_ORDER_KEY = 'tna_menu_order';
 

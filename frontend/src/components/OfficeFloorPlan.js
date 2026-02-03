@@ -389,7 +389,7 @@ export const OfficeFloorPlan = ({ offices, filteredOffices, selectedOfficeIds = 
       <div className="relative" style={{ backgroundColor: '#fafafa' }}>
         <div className="relative w-full" style={{ paddingBottom: '40%' }}>
           <img
-            src="https://customer-assets.emergentagent.com/job_373fee87-468b-4940-ac57-79ceed35c83a/artifacts/dg3ddtli_Captura%20de%20pantalla%202025-12-10%20a%20la%28s%29%2019.03.21.png"
+            src="/floor-plan.png"
             alt="Plano Piso 17"
             className="absolute inset-0 w-full h-full object-contain"
             style={{ opacity: 0.95 }}

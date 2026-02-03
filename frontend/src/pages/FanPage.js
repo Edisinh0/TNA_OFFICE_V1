@@ -13,7 +13,7 @@ import { Calendar, Users, Package, Building2, Phone, MapPin, Mail, Clock, Search
 import axios from 'axios';
 import InteractiveCalendar from '../components/InteractiveCalendar';
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_tnaworkspace/artifacts/joeekgrg_Logo_TNAOffice%20positivo.png';
+const LOGO_URL = '/logo-tna.png';
 
 export const FanPage = () => {
   const navigate = useNavigate();

@@ -1,46 +1,49 @@
-"""
-TNA Office API - Punto de entrada para Phusion Passenger (cPanel)
-
-Este archivo es el punto de entrada para que cPanel reconozca
-la aplicación FastAPI a través de Phusion Passenger.
-
-INSTRUCCIONES DE CONFIGURACION EN CPANEL:
-1. Ir a "Setup Python App" en cPanel
-2. Crear una nueva aplicación Python
-3. Seleccionar Python 3.9+ como versión
-4. Configurar el Application Root: /home/USUARIO/tna-office-api
-5. Configurar el Application URL: tu-dominio.com/api (o subdominio)
-6. Configurar Application startup file: passenger_wsgi.py
-7. Configurar Application Entry point: application
-8. Guardar y ejecutar "pip install -r requirements.txt" en el entorno virtual
-"""
-
 import os
 import sys
+import traceback
 
-# Agregar el directorio de la aplicación al path
+# 1. Configuración de rutas
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, CURRENT_DIR)
+LOG_FILE = os.path.join(CURRENT_DIR, 'passenger_error.log')
 
-# Cargar variables de entorno desde .env
-from dotenv import load_dotenv
-load_dotenv(os.path.join(CURRENT_DIR, '.env'))
+def log_error(msg):
+    """Escribe errores en un archivo de log para debug manual."""
+    with open(LOG_FILE, 'a') as f:
+        f.write(f"--- {os.uname()[1]} ---\n{msg}\n")
 
-# Importar la aplicación FastAPI
-from server import app
-
-# Crear el adaptador ASGI para Passenger
-# Passenger espera una variable llamada 'application'
 try:
-    # Para Passenger con soporte ASGI nativo (versiones más recientes)
-    application = app
-except Exception as e:
-    # Fallback: Usar un adaptador WSGI si ASGI no está disponible
+    # 2. Asegurar que Python encuentre tu código (server.py)
+    sys.path.insert(0, CURRENT_DIR)
+
+    # 3. Forzar el uso del entorno virtual (VirtualEnv)
+    # Buscamos la carpeta 'venv' o la que hayas creado en cPanel
+    # Si tu carpeta tiene otro nombre, cámbiala aquí abajo
+    INTERP = os.path.join(CURRENT_DIR, 'venv', 'bin', 'python')
+    if os.path.exists(INTERP) and sys.executable != INTERP:
+        os.execl(INTERP, INTERP, *sys.argv)
+
+    # 4. Cargar variables de entorno desde el archivo 'env' (o '.env')
+    from dotenv import load_dotenv
+    # Intentamos cargar tanto '.env' como 'env' por si acaso
+    load_dotenv(os.path.join(CURRENT_DIR, '.env'))
+    load_dotenv(os.path.join(CURRENT_DIR, 'env'))
+
+    # 5. Importar tu app de FastAPI
+    # Asegúrate de que tu archivo se llame server.py y tenga un objeto 'app'
+    from server import app
     from a2wsgi import ASGIMiddleware
+
+    # 6. Punto de entrada para Phusion Passenger (WSGI)
     application = ASGIMiddleware(app)
 
-# Configuración adicional para desarrollo/debug
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get('PORT', 8001))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+except Exception as e:
+    # Si algo falla, lo guardamos en el log y lo mostramos en pantalla
+    error_detail = traceback.format_exc()
+    log_error(error_detail)
+    
+    def application(environ, start_response):
+        status = '500 Internal Server Error'
+        output = f"Error crítico al iniciar la aplicación:\n\n{error_detail}".encode('utf-8')
+        response_headers = [('Content-type', 'text/plain'), ('Content-Length', str(len(output)))]
+        start_response(status, response_headers)
+        return [output]

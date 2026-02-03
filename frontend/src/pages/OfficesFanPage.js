@@ -10,8 +10,8 @@ import { Building2, MapPin, Users, DollarSign, CheckCircle, Mail, Phone as Phone
 import { toast } from 'sonner';
 import { API } from '../utils/api';
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_tnaworkspace/artifacts/joeekgrg_Logo_TNAOffice%20positivo.png';
-const FLOOR_PLAN_IMAGE = 'https://customer-assets.emergentagent.com/job_373fee87-468b-4940-ac57-79ceed35c83a/artifacts/dg3ddtli_Captura%20de%20pantalla%202025-12-10%20a%20la%28s%29%2019.03.21.png';
+const LOGO_URL = '/logo-tna.png';
+const FLOOR_PLAN_IMAGE = '/floor-plan.png';
 
 export const OfficesFanPage = () => {
   const [offices, setOffices] = useState([]);
