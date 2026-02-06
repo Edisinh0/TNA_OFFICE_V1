@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { Calendar, Users, Package, TrendingUp, ArrowLeft } from 'lucide-react';
 
-const LOGO_URL = '/logo-tna.png';
+const LOGO_URL = process.env.PUBLIC_URL + '/logo-tna.png';
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -34,12 +34,7 @@ export const Login = () => {
         setToken(response.data.token);
         setUser(response.data.user);
         toast.success('Bienvenido a TNA Office');
-        
-        if (response.data.user.role === 'admin' || response.data.user.role === 'comisionista') {
-          navigate('/dashboard');
-        } else {
-          navigate('/');
-        }
+        navigate('/dashboard');
       } else {
         await apiClient.post('/auth/register', formData);
         toast.success('Cuenta creada exitosamente. Por favor inicia sesión.');
@@ -59,7 +54,7 @@ export const Login = () => {
       <div 
         className="hidden lg:flex lg:w-1/2 relative bg-cover bg-center"
         style={{
-          backgroundImage: "url('/hero-background.jpg')",
+          backgroundImage: `url('${process.env.PUBLIC_URL}/hero-background.jpg')`,
         }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/90 to-black/50"></div>

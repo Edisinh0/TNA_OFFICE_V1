@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient, { API } from '../utils/api';
+import { isAuthenticated, getUser } from '../utils/auth';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -13,7 +14,7 @@ import { Calendar, Users, Package, Building2, Phone, MapPin, Mail, Clock, Search
 import axios from 'axios';
 import InteractiveCalendar from '../components/InteractiveCalendar';
 
-const LOGO_URL = '/logo-tna.png';
+const LOGO_URL = process.env.PUBLIC_URL + '/logo-tna.png';
 
 export const FanPage = () => {
   const navigate = useNavigate();
@@ -160,7 +161,7 @@ export const FanPage = () => {
       <section 
         className="relative h-screen flex items-center justify-center"
         style={{
-          backgroundImage: "url('/hero-background.jpg')",
+          backgroundImage: `url('${process.env.PUBLIC_URL}/hero-background.jpg')`,
           backgroundSize: 'cover',
           backgroundPosition: 'center'
         }}
@@ -177,14 +178,31 @@ export const FanPage = () => {
             Business Center Premium en el corazón de Las Condes. Salas de reunión, casetas telefónicas y servicios empresariales de primer nivel.
           </p>
           <div className="flex flex-wrap gap-4 justify-center">
-            <Button 
-              data-testid="login-nav-button"
-              onClick={() => navigate('/login')} 
-              className="bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide px-8 py-6 font-secondary text-lg"
-            >
-              ACCEDER AL SISTEMA
-            </Button>
-            <Button 
+            {isAuthenticated() ? (
+              <Button
+                data-testid="dashboard-nav-button"
+                onClick={() => {
+                  const user = getUser();
+                  if (user?.role === 'admin' || user?.role === 'comisionista') {
+                    navigate('/dashboard');
+                  } else {
+                    navigate('/dashboard');
+                  }
+                }}
+                className="bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide px-8 py-6 font-secondary text-lg"
+              >
+                IR AL PANEL
+              </Button>
+            ) : (
+              <Button
+                data-testid="login-nav-button"
+                onClick={() => navigate('/login')}
+                className="bg-white text-black hover:bg-zinc-200 rounded-sm font-bold uppercase tracking-wide px-8 py-6 font-secondary text-lg"
+              >
+                ACCEDER AL SISTEMA
+              </Button>
+            )}
+            <Button
               onClick={() => document.getElementById('servicios').scrollIntoView({ behavior: 'smooth' })}
               variant="outline"
               className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-black rounded-sm uppercase tracking-wide px-8 py-6 font-secondary text-lg"
@@ -242,8 +260,12 @@ export const FanPage = () => {
             {rooms.map((room) => (
               <Card key={room.id} className="bg-[#0A0A0A] border-zinc-800 rounded-sm hover:border-zinc-700 transition-all duration-300 overflow-hidden">
                 <div className="h-48 bg-zinc-900 overflow-hidden">
-                  {room.image_url && (
+                  {room.image_url ? (
                     <img src={room.image_url} alt={room.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-900">
+                      <Building2 className="w-16 h-16 text-zinc-700" strokeWidth={1} />
+                    </div>
                   )}
                 </div>
                 <CardHeader className="border-b border-zinc-900">
@@ -554,7 +576,7 @@ export const FanPage = () => {
             className="h-12 w-auto object-contain mx-auto mb-4 brightness-0 invert"
           />
           <div className="h-1 w-24 tna-gradient mx-auto mb-4"></div>
-          <p className="text-zinc-500 font-primary text-sm">© 2024 TNA Office. Todos los derechos reservados.</p>
+          <p className="text-zinc-500 font-primary text-sm">© {new Date().getFullYear()} TNA Office. Todos los derechos reservados.</p>
         </div>
       </footer>
 

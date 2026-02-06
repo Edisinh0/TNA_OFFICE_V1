@@ -10,8 +10,8 @@ import { Building2, MapPin, Users, DollarSign, CheckCircle, Mail, Phone as Phone
 import { toast } from 'sonner';
 import { API } from '../utils/api';
 
-const LOGO_URL = '/logo-tna.png';
-const FLOOR_PLAN_IMAGE = '/floor-plan.png';
+const LOGO_URL = process.env.PUBLIC_URL + '/logo-tna.png';
+const FLOOR_PLAN_IMAGE = process.env.PUBLIC_URL + '/floor-plan.png';
 
 export const OfficesFanPage = () => {
   const [offices, setOffices] = useState([]);

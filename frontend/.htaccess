@@ -9,9 +9,8 @@
 RewriteEngine On
 
 # Configurar la base del directorio
-# Si el frontend esta en un subdirectorio, ajustar esta linea
-# Ejemplo: RewriteBase /app/ si esta en tu-dominio.com/app/
-RewriteBase /
+# El frontend esta en el subdirectorio /office/
+RewriteBase /office/
 
 # No reescribir archivos y directorios existentes
 RewriteCond %{REQUEST_FILENAME} !-f
@@ -89,4 +88,4 @@ RewriteRule ^ index.html [L]
 # Manejo de errores
 # ==============================================
 
-ErrorDocument 404 /index.html
+ErrorDocument 404 /office/index.html

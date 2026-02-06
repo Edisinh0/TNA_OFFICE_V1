@@ -29,7 +29,7 @@ function App() {
   return (
     <div className="App">
       <Toaster position="top-right" theme="dark" />
-      <BrowserRouter>
+      <BrowserRouter basename="/office">
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<FanPage />} />
@@ -65,8 +65,9 @@ function App() {
             </PrivateRoute>
           } />
           
-          {/* Legacy route redirect */}
+          {/* Legacy route redirects */}
           <Route path="/sales" element={<Navigate to="/tickets" replace />} />
+          <Route path="/parking" element={<Navigate to="/parking-storage" replace />} />
           
           <Route path="/requests" element={
             <PrivateRoute>
@@ -121,6 +122,9 @@ function App() {
               <Layout><Users /></Layout>
             </PrivateRoute>
           } />
+
+          {/* Catch-all: redirect unknown routes to landing */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </div>

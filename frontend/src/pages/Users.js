@@ -528,14 +528,14 @@ export const Users = () => {
             <div>
               <Label className="text-black font-primary font-medium">Perfil</Label>
               <Select
-                value={userForm.profile_id}
-                onValueChange={(value) => setUserForm({ ...userForm, profile_id: value })}
+                value={userForm.profile_id || "none"}
+                onValueChange={(value) => setUserForm({ ...userForm, profile_id: value === "none" ? "" : value })}
               >
                 <SelectTrigger className="bg-white border-gray-300 text-black">
                   <SelectValue placeholder="Seleccionar perfil" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin perfil</SelectItem>
+                  <SelectItem value="none">Sin perfil</SelectItem>
                   {profiles.map((profile) => (
                     <SelectItem key={profile.id} value={profile.id}>
                       {profile.name}

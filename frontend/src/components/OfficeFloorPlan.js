@@ -389,7 +389,7 @@ export const OfficeFloorPlan = ({ offices, filteredOffices, selectedOfficeIds = 
       <div className="relative" style={{ backgroundColor: '#fafafa' }}>
         <div className="relative w-full" style={{ paddingBottom: '40%' }}>
           <img
-            src="/floor-plan.png"
+            src={process.env.PUBLIC_URL + '/floor-plan.png'}
             alt="Plano Piso 17"
             className="absolute inset-0 w-full h-full object-contain"
             style={{ opacity: 0.95 }}

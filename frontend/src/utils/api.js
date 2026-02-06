@@ -59,7 +59,7 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       console.warn('[API] Sesion expirada o no autorizada. Redirigiendo a login...');
       logout();
-      window.location.href = '/login';
+      window.location.href = '/office/login';
     }
 
     // Manejar errores de red

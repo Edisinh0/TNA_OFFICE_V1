@@ -25,6 +25,8 @@ export const Resources = () => {
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [showCreateResourceModal, setShowCreateResourceModal] = useState(false);
+  const [createResourceType, setCreateResourceType] = useState('room');
   const [selectedResource, setSelectedResource] = useState(null);
   const [editingResource, setEditingResource] = useState(null);
   const [resourceType, setResourceType] = useState('room'); // 'room' or 'booth'
@@ -59,6 +61,16 @@ export const Resources = () => {
     capacity: '',
     description: '',
     image_url: ''
+  });
+
+  const [createResourceForm, setCreateResourceForm] = useState({
+    name: '',
+    capacity: '',
+    hourly_rate: '',
+    half_day_rate: '',
+    full_day_rate: '',
+    color: '#3B82F6',
+    description: ''
   });
 
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -259,7 +271,7 @@ export const Resources = () => {
 
   const handleDeleteResource = async (resource, type) => {
     if (!window.confirm(`¿Estás seguro de eliminar ${resource.name}?`)) return;
-    
+
     try {
       const endpoint = type === 'room' ? 'rooms' : 'booths';
       await apiClient.delete(`/${endpoint}/${resource.id}`);
@@ -268,6 +280,51 @@ export const Resources = () => {
     } catch (error) {
       toast.error('Error al eliminar recurso');
     }
+  };
+
+  const handleCreateResource = async (e) => {
+    e.preventDefault();
+    try {
+      const endpoint = createResourceType === 'room' ? 'rooms' : 'booths';
+      const data = {
+        name: createResourceForm.name,
+        capacity: parseInt(createResourceForm.capacity) || 0,
+        hourly_rate: parseFloat(createResourceForm.hourly_rate) || 0,
+        half_day_rate: parseFloat(createResourceForm.half_day_rate) || 0,
+        full_day_rate: parseFloat(createResourceForm.full_day_rate) || 0,
+        color: createResourceForm.color
+      };
+
+      await apiClient.post(`/${endpoint}`, data);
+      toast.success(`${createResourceType === 'room' ? 'Sala' : 'Caseta'} creada exitosamente`);
+      setShowCreateResourceModal(false);
+      setCreateResourceForm({
+        name: '',
+        capacity: '',
+        hourly_rate: '',
+        half_day_rate: '',
+        full_day_rate: '',
+        color: '#3B82F6',
+        description: ''
+      });
+      loadData();
+    } catch (error) {
+      toast.error('Error al crear recurso');
+    }
+  };
+
+  const openCreateResourceModal = (type) => {
+    setCreateResourceType(type);
+    setCreateResourceForm({
+      name: '',
+      capacity: '',
+      hourly_rate: '',
+      half_day_rate: '',
+      full_day_rate: '',
+      color: type === 'room' ? '#3B82F6' : '#9333EA',
+      description: ''
+    });
+    setShowCreateResourceModal(true);
   };
 
   const updateBookingStatus = async (bookingId, status) => {
@@ -462,10 +519,10 @@ export const Resources = () => {
               setResourceType(booth.type);
               setShowCalendarModal(true);
             }}
-            className="bg-white border-2 border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-400 rounded-lg font-secondary text-xs uppercase tracking-wide transition-all"
+            className="bg-white border border-purple-300 text-purple-700 hover:bg-purple-50 rounded-sm font-secondary text-xs uppercase tracking-wide"
           >
             <CalendarIcon className="w-4 h-4 mr-2" />
-            Ver Calendario
+            Calendario
           </Button>
           <Button
             onClick={() => {
@@ -473,19 +530,19 @@ export const Resources = () => {
               setResourceType(booth.type);
               setShowBookingModal(true);
             }}
-            className="bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:from-purple-700 hover:to-purple-800 rounded-lg font-secondary text-xs uppercase tracking-wide shadow-md transition-all"
+            className="bg-purple-700 text-white hover:bg-purple-800 rounded-sm font-secondary text-xs uppercase tracking-wide"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Nueva Reserva
+            Reservar
           </Button>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-3 mt-3">
           <Button
             onClick={() => handleEditResource(booth, 'booth')}
             variant="outline"
             size="sm"
-            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg font-secondary text-xs"
+            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-sm font-secondary text-xs uppercase tracking-wide"
           >
             <Edit className="w-4 h-4 mr-2" />
             Editar
@@ -494,7 +551,7 @@ export const Resources = () => {
             onClick={() => handleDeleteResource(booth, 'booth')}
             variant="outline"
             size="sm"
-            className="bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-lg font-secondary text-xs"
+            className="bg-white border border-red-300 text-red-600 hover:bg-red-50 rounded-sm font-secondary text-xs uppercase tracking-wide"
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Eliminar
@@ -668,11 +725,29 @@ export const Resources = () => {
   return (
     <div className="space-y-6" data-testid="resources-page">
       {/* Header */}
-      <div>
-        <h1 className="font-secondary text-4xl md:text-5xl font-black uppercase text-black tracking-tight">
-          GESTIÓN DE RECURSOS
-        </h1>
-        <div className="h-1 w-32 tna-gradient mt-4"></div>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="font-secondary text-4xl md:text-5xl font-black uppercase text-black tracking-tight">
+            GESTIÓN DE RECURSOS
+          </h1>
+          <div className="h-1 w-32 tna-gradient mt-4"></div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => openCreateResourceModal('room')}
+            className="bg-blue-600 text-white hover:bg-blue-700 rounded-sm font-secondary uppercase"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nueva Sala
+          </Button>
+          <Button
+            onClick={() => openCreateResourceModal('booth')}
+            className="bg-purple-600 text-white hover:bg-purple-700 rounded-sm font-secondary uppercase"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nueva Caseta
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -1183,6 +1258,104 @@ export const Resources = () => {
                 ) : (
                   'GUARDAR CAMBIOS'
                 )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Resource Modal */}
+      <Dialog open={showCreateResourceModal} onOpenChange={setShowCreateResourceModal}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="font-secondary uppercase text-black">
+              {createResourceType === 'room' ? 'Nueva Sala de Reunión' : 'Nueva Caseta'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateResource} className="space-y-4 mt-4">
+            <div>
+              <Label>Nombre *</Label>
+              <Input
+                value={createResourceForm.name}
+                onChange={(e) => setCreateResourceForm({ ...createResourceForm, name: e.target.value })}
+                placeholder={createResourceType === 'room' ? 'Ej: Sala Principal' : 'Ej: Caseta Norte'}
+                required
+                className="bg-white border-gray-300 text-black"
+              />
+            </div>
+
+            {createResourceType === 'room' && (
+              <div>
+                <Label>Capacidad (personas)</Label>
+                <Input
+                  type="number"
+                  value={createResourceForm.capacity}
+                  onChange={(e) => setCreateResourceForm({ ...createResourceForm, capacity: e.target.value })}
+                  placeholder="Ej: 10"
+                  className="bg-white border-gray-300 text-black"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label className="text-xs">Tarifa/Hora ($)</Label>
+                <Input
+                  type="number"
+                  value={createResourceForm.hourly_rate}
+                  onChange={(e) => setCreateResourceForm({ ...createResourceForm, hourly_rate: e.target.value })}
+                  placeholder="0"
+                  className="bg-white border-gray-300 text-black"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Medio día ($)</Label>
+                <Input
+                  type="number"
+                  value={createResourceForm.half_day_rate}
+                  onChange={(e) => setCreateResourceForm({ ...createResourceForm, half_day_rate: e.target.value })}
+                  placeholder="0"
+                  className="bg-white border-gray-300 text-black"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Día completo ($)</Label>
+                <Input
+                  type="number"
+                  value={createResourceForm.full_day_rate}
+                  onChange={(e) => setCreateResourceForm({ ...createResourceForm, full_day_rate: e.target.value })}
+                  placeholder="0"
+                  className="bg-white border-gray-300 text-black"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Color</Label>
+              <Input
+                type="color"
+                value={createResourceForm.color}
+                onChange={(e) => setCreateResourceForm({ ...createResourceForm, color: e.target.value })}
+                className="w-full h-10 bg-white border-gray-300"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                type="button"
+                onClick={() => setShowCreateResourceModal(false)}
+                variant="outline"
+                className="flex-1 bg-white border-gray-300 text-gray-700 hover:bg-gray-50 rounded-sm"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className={`flex-1 text-white rounded-sm font-bold uppercase tracking-wide font-secondary ${
+                  createResourceType === 'room' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'
+                }`}
+              >
+                Crear {createResourceType === 'room' ? 'Sala' : 'Caseta'}
               </Button>
             </div>
           </form>

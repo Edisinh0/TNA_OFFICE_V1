@@ -82,7 +82,7 @@ export const Requests = () => {
       client_name: request.client_name || '',
       client_email: request.client_email || '',
       client_phone: request.client_phone || '',
-      details: { ...request.details }
+      details: { ...(request.details || {}) }
     });
     setShowDetailModal(true);
   };
@@ -165,22 +165,22 @@ export const Requests = () => {
                     <div className="col-span-2">
                       <div className="text-gray-500 text-xs font-primary font-semibold mb-1 uppercase">Detalles</div>
                       <div className="text-black font-primary text-sm space-y-2">
-                        {request.details.resource_name && (
+                        {request.details?.resource_name && (
                           <div><span className="font-semibold">Recurso:</span> <span className="text-blue-600 font-bold">{request.details.resource_name}</span></div>
                         )}
-                        {request.details.product_name && (
+                        {request.details?.product_name && (
                           <div><span className="font-semibold">Producto:</span> <span className="text-orange-600 font-bold">{request.details.product_name}</span></div>
                         )}
                         {/* Fecha y hora destacada para reservas */}
-                        {request.details.start_time && (
+                        {request.details?.start_time && (
                           <div className="mt-2 p-3 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg">
                             <div className="flex items-center gap-4 flex-wrap">
                               <div className="flex items-center gap-2">
                                 <CalendarDays className="w-5 h-5 text-orange-600" />
                                 <span className="text-orange-900 font-bold text-base">
-                                  {new Date(request.details.start_time).toLocaleDateString('es-CL', { 
-                                    weekday: 'long', 
-                                    day: 'numeric', 
+                                  {new Date(request.details.start_time).toLocaleDateString('es-CL', {
+                                    weekday: 'long',
+                                    day: 'numeric',
                                     month: 'long',
                                     year: 'numeric'
                                   })}
@@ -190,7 +190,7 @@ export const Requests = () => {
                                 <Clock className="w-5 h-5 text-orange-600" />
                                 <span className="text-orange-900 font-bold text-base">
                                   {new Date(request.details.start_time).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
-                                  {request.details.end_time && (
+                                  {request.details?.end_time && (
                                     <span> - {new Date(request.details.end_time).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
                                   )}
                                 </span>
@@ -198,7 +198,7 @@ export const Requests = () => {
                             </div>
                           </div>
                         )}
-                        {request.details.notes && (
+                        {request.details?.notes && (
                           <div className="text-gray-700 text-sm italic mt-2 p-2 bg-gray-50 rounded border-l-2 border-[#FF8A00]">"{request.details.notes}"</div>
                         )}
                       </div>

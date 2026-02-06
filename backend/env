@@ -1,10 +1,10 @@
 # Configuración de Base de Datos
-DATABASE_URL=mysql+pymysql://tnaoffice_usuario:ox%Jwi]8XZDB3e8+@localhost:3306/tnaoffice_db
+DATABASE_URL=mysql+pymysql://tnagroup_user_mam:%402.%7B%2AnbRHY%5De-_%2AH@localhost:3306/tnagroup_database_office
 
 # Clave secreta para JWT (cambiar por una clave segura)
 JWT_SECRET=TNA_Office_2026_Clave_Super_Secreta_#99_xyz
 
 # Orígenes permitidos para CORS (tu dominio)
-CORS_ORIGINS=https://tna-office.cl,https://www.tna-office.cl,https://api.tna-office.cl
+CORS_ORIGINS=https://tnagroup.cl,https://www.tnagroup.cl,https://api.tnagroup.cl
 
 DEBUG=false

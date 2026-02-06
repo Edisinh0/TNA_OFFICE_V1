@@ -148,17 +148,17 @@ export const Offices = () => {
   const handleEdit = (office) => {
     setEditingOffice(office);
     setForm({
-      office_number: office.office_number,
+      office_number: office.office_number || '',
       related_office: office.related_office || '',
-      square_meters: office.square_meters.toString(),
-      capacity: office.capacity?.toString() || Math.floor(office.square_meters / 3).toString(),
-      location: office.location,
+      square_meters: (office.square_meters || 0).toString(),
+      capacity: office.capacity?.toString() || Math.floor((office.square_meters || 0) / 3).toString(),
+      location: office.location || '',
       client_id: office.client_id || '',
-      billed_value_uf: office.billed_value_uf.toString(),
-      cost_uf: office.cost_uf.toString(),
-      sale_value_uf: office.sale_value_uf.toString(),
-      cost_difference_uf: office.cost_difference_uf.toString(),
-      cost_difference_clp: office.cost_difference_clp.toString(),
+      billed_value_uf: (office.billed_value_uf || 0).toString(),
+      cost_uf: (office.cost_uf || 0).toString(),
+      sale_value_uf: (office.sale_value_uf || 0).toString(),
+      cost_difference_uf: (office.cost_difference_uf || 0).toString(),
+      cost_difference_clp: (office.cost_difference_clp || 0).toString(),
       notes: office.notes || ''
     });
     setShowModal(true);
@@ -356,11 +356,13 @@ export const Offices = () => {
   };
 
   const formatCLP = (amount) => {
+    const value = parseFloat(amount);
+    if (isNaN(value)) return '$0';
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
       currency: 'CLP',
       minimumFractionDigits: 0
-    }).format(amount);
+    }).format(value);
   };
 
   const getLocationColor = (location) => {
@@ -478,7 +480,7 @@ export const Offices = () => {
   };
 
   const copyFanPageLink = () => {
-    const fanPageUrl = `${window.location.origin}/oficinas`;
+    const fanPageUrl = `${window.location.origin}/office/oficinas`;
     navigator.clipboard.writeText(fanPageUrl).then(() => {
       toast.success('¡Enlace copiado al portapapeles!');
     }).catch(() => {
@@ -528,7 +530,7 @@ export const Offices = () => {
             <div className="flex items-center gap-2">
               <div className="bg-white border border-green-200 rounded px-3 py-2">
                 <code className="text-sm text-gray-700 font-mono">
-                  {window.location.origin}/oficinas
+                  {window.location.origin}/office/oficinas
                 </code>
               </div>
               <Button
@@ -540,7 +542,7 @@ export const Offices = () => {
                 Copiar Link
               </Button>
               <Button
-                onClick={() => window.open('/oficinas', '_blank')}
+                onClick={() => window.open('/office/oficinas', '_blank')}
                 variant="outline"
                 className="bg-white border-green-300 text-green-700 hover:bg-green-50 rounded-sm font-secondary uppercase text-xs tracking-wide"
                 size="sm"
@@ -571,7 +573,7 @@ export const Offices = () => {
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         {/* Indicador de selección */}
         {selectedOffices.length > 0 && (
           <div className="lg:col-span-5 bg-orange-100 border border-orange-300 rounded-sm p-3 flex items-center justify-between">

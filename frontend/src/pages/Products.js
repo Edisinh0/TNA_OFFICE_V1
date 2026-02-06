@@ -253,7 +253,9 @@ export const Products = () => {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(amount);
+    const value = parseFloat(amount);
+    if (isNaN(value)) return '$0';
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(value);
   };
 
   // Obtener nombres de categorías para el select
