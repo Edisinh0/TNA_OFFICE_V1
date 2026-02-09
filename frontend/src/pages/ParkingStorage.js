@@ -6,15 +6,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
-import { 
-  Plus, 
-  Car, 
-  Package, 
-  Edit, 
-  Trash2, 
+import {
+  Plus,
+  Car,
+  Package,
+  Edit,
+  Trash2,
   Building2,
   Search,
-  X
+  X,
+  ArrowUpDown,
+  TrendingUp
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -27,6 +29,8 @@ export const ParkingStorage = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [sortColumn, setSortColumn] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc');
   
   const [form, setForm] = useState({
     type: 'parking',
@@ -144,14 +148,34 @@ export const ParkingStorage = () => {
     });
   };
 
-  // Filtrar items
+  // Función para ordenar columnas
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filtrar y ordenar items
   const filteredItems = items.filter(item => {
-    const matchesSearch = 
+    const matchesSearch =
       item.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.client_name && item.client_name.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesType = filterType === 'all' || item.type === filterType;
     return matchesSearch && matchesType;
+  }).sort((a, b) => {
+    if (!sortColumn) return 0;
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    const valA = a[sortColumn];
+    const valB = b[sortColumn];
+    if (valA == null && valB == null) return 0;
+    if (valA == null) return 1;
+    if (valB == null) return -1;
+    if (typeof valA === 'number' && typeof valB === 'number') return (valA - valB) * dir;
+    return String(valA).localeCompare(String(valB), 'es') * dir;
   });
 
   // Estadísticas
@@ -259,8 +283,8 @@ export const ParkingStorage = () => {
         </Card>
       </div>
 
-      {/* Rentabilidad */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Rentabilidad y Ventas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className={`border-2 ${totalMargin >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
@@ -288,7 +312,7 @@ export const ParkingStorage = () => {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-secondary uppercase text-gray-600 mb-1">Venta Potencial (Arrendados)</p>
+                <p className="text-sm font-secondary uppercase text-gray-600 mb-1">Venta</p>
                 <div className="flex items-baseline gap-3">
                   <p className="text-3xl font-bold text-amber-600 font-primary">
                     {potentialRevenue.toFixed(2)} UF
@@ -301,6 +325,27 @@ export const ParkingStorage = () => {
               </div>
               <div className="p-3 bg-amber-100 rounded-full">
                 <span className="text-2xl font-bold text-amber-600">$</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-blue-50 border-2 border-blue-200">
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-secondary uppercase text-gray-600 mb-1">Venta Potencial</p>
+                <div className="flex items-baseline gap-3">
+                  <p className="text-3xl font-bold text-blue-600 font-primary">
+                    {totalSale.toFixed(2)} UF
+                  </p>
+                  <p className="text-lg font-semibold text-blue-500 font-primary">
+                    {formatCLP(totalSale * UFValue)}
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 font-primary mt-1">Suma total de venta esperada (todos)</p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-full">
+                <TrendingUp className="w-6 h-6 text-blue-600" />
               </div>
             </div>
           </CardContent>
@@ -369,15 +414,31 @@ export const ParkingStorage = () => {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600">Tipo</th>
-                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600">Número</th>
-                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600">Ubicación</th>
-                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600">Cliente</th>
-                  <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600">Facturado UF</th>
-                  <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600">Costo UF</th>
-                  <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600">Venta UF</th>
+                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('type')}>
+                    <span className="flex items-center gap-1">Tipo <ArrowUpDown className="w-3 h-3" />{sortColumn === 'type' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
+                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('number')}>
+                    <span className="flex items-center gap-1">Número <ArrowUpDown className="w-3 h-3" />{sortColumn === 'number' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
+                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('location')}>
+                    <span className="flex items-center gap-1">Ubicación <ArrowUpDown className="w-3 h-3" />{sortColumn === 'location' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
+                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('client_name')}>
+                    <span className="flex items-center gap-1">Cliente <ArrowUpDown className="w-3 h-3" />{sortColumn === 'client_name' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
+                  <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('billed_value_uf')}>
+                    <span className="flex items-center justify-end gap-1">Facturado UF <ArrowUpDown className="w-3 h-3" />{sortColumn === 'billed_value_uf' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
+                  <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('cost_uf')}>
+                    <span className="flex items-center justify-end gap-1">Costo UF <ArrowUpDown className="w-3 h-3" />{sortColumn === 'cost_uf' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
+                  <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('sale_value_uf')}>
+                    <span className="flex items-center justify-end gap-1">Venta UF <ArrowUpDown className="w-3 h-3" />{sortColumn === 'sale_value_uf' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
                   <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600">Margen UF</th>
-                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600">Estado</th>
+                  <th className="text-left p-4 font-secondary text-xs uppercase text-gray-600 cursor-pointer hover:text-black select-none" onClick={() => handleSort('status')}>
+                    <span className="flex items-center gap-1">Estado <ArrowUpDown className="w-3 h-3" />{sortColumn === 'status' && (sortDirection === 'asc' ? ' ↑' : ' ↓')}</span>
+                  </th>
                   <th className="text-right p-4 font-secondary text-xs uppercase text-gray-600">Acciones</th>
                 </tr>
               </thead>

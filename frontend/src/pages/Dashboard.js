@@ -687,9 +687,12 @@ export const Dashboard = () => {
                   <AlertTriangle className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <span className="text-base">Contratos Próximos a Vencer</span>
+                  <span className="text-base">Alertas de Contratos</span>
                   <span className="ml-2 px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full font-primary">
                     {expiringContracts.length}
+                  </span>
+                  <span className="block text-xs font-primary text-orange-600 font-normal mt-0.5">
+                    Vencidos y por vencer
                   </span>
                 </div>
               </CardTitle>
@@ -721,7 +724,7 @@ export const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-900 font-primary">{contract.client_name}</p>
-                      <p className="text-xs text-gray-600 font-primary truncate max-w-[250px]">{contract.document_name}</p>
+                      <p className="text-xs text-gray-600 font-primary truncate max-w-[250px]">{contract.name}</p>
                     </div>
                   </div>
                   <div className="text-right">

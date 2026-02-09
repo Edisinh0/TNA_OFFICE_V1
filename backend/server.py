@@ -284,17 +284,22 @@ class RoomDB(Base):
     status = Column(String(20), default='active')
     blocks_rooms = Column(JSON)
     related_rooms = Column(JSON)
+    image_url = Column(Text, default='')
+    description = Column(Text, default='')
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class BoothDB(Base):
     __tablename__ = "booths"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), nullable=False)
+    capacity = Column(Integer)
     hourly_rate = Column(Float, default=0.0)
     half_day_rate = Column(Float, default=0.0)
     full_day_rate = Column(Float, default=0.0)
     color = Column(String(20))
     status = Column(String(20), default='active')
+    image_url = Column(Text, default='')
+    description = Column(Text, default='')
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class BookingDB(Base):
@@ -1332,7 +1337,9 @@ def create_room(data: dict, db: Session = Depends(get_db), current_user: UserDB 
         amenities=data.get('amenities'),
         color=data.get('color'),
         blocks_rooms=data.get('blocks_rooms'),
-        related_rooms=data.get('related_rooms')
+        related_rooms=data.get('related_rooms'),
+        image_url=data.get('image_url', ''),
+        description=data.get('description', '')
     )
     db.add(room)
     db.commit()
@@ -1379,10 +1386,13 @@ def create_booth(data: dict, db: Session = Depends(get_db), current_user: UserDB
     booth = BoothDB(
         id=str(uuid.uuid4()),
         name=data.get('name'),
+        capacity=data.get('capacity'),
         hourly_rate=data.get('hourly_rate', 0),
         half_day_rate=data.get('half_day_rate', 0),
         full_day_rate=data.get('full_day_rate', 0),
-        color=data.get('color')
+        color=data.get('color'),
+        image_url=data.get('image_url', ''),
+        description=data.get('description', '')
     )
     db.add(booth)
     db.commit()
@@ -2002,7 +2012,11 @@ def create_request(data: dict, db: Session = Depends(get_db)):
         company=data.get('company'),
         company_name=data.get('company_name') or data.get('company'),
         message=data.get('message'),
+        request_type=data.get('request_type', 'contact'),
+        description=data.get('description'),
         source=data.get('source'),
+        details=data.get('details'),
+        notes=data.get('notes'),
         status='new'
     )
     db.add(request)
@@ -2419,45 +2433,62 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: UserDB = De
 def get_expiring_contracts(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     today = date.today()
     threshold = today + timedelta(days=30)
+    expired_threshold = today - timedelta(days=90)  # Show expired up to 90 days ago
 
     expiring = []
 
-    # Check offices
+    # Check offices - expiring soon
     offices = db.query(OfficeDB).filter(
         OfficeDB.contract_end != None,
         OfficeDB.contract_end <= threshold,
-        OfficeDB.contract_end >= today
+        OfficeDB.contract_end >= expired_threshold
     ).all()
 
     for office in offices:
         client_name = office.client.company_name if office.client else "Sin cliente"
+        days_remaining = (office.contract_end - today).days if office.contract_end else 0
         expiring.append({
             "type": "office",
             "id": office.id,
             "name": f"Oficina {office.office_number}",
             "client_name": client_name,
+            "client_id": office.client_id if office.client else None,
             "expiry_date": office.contract_end.isoformat() if office.contract_end else None,
-            "days_remaining": (office.contract_end - today).days if office.contract_end else 0
+            "days_remaining": days_remaining,
+            "status": "expired" if days_remaining < 0 else ("critical" if days_remaining <= 7 else "expiring")
         })
 
-    # Check client documents
+    # Check client documents with notifications enabled
+    # Use each document's notification_days setting for threshold
+    from sqlalchemy import or_
+
     documents = db.query(ClientDocumentDB).filter(
-        ClientDocumentDB.expiry_date != None,
-        ClientDocumentDB.expiry_date <= threshold,
-        ClientDocumentDB.expiry_date >= today,
-        ClientDocumentDB.notifications_enabled == True
+        ClientDocumentDB.notifications_enabled == True,
+        or_(
+            ClientDocumentDB.expiry_date != None,
+            ClientDocumentDB.contract_end_date != None
+        )
     ).all()
 
     for doc in documents:
-        client_name = doc.client.company_name if doc.client else "Sin cliente"
-        expiring.append({
-            "type": "document",
-            "id": doc.id,
-            "name": doc.name,
-            "client_name": client_name,
-            "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
-            "days_remaining": (doc.expiry_date - today).days if doc.expiry_date else 0
-        })
+        check_date = doc.contract_end_date or doc.expiry_date
+        if not check_date:
+            continue
+        days_remaining = (check_date - today).days
+        doc_threshold_days = doc.notification_days or 30
+        # Show if within notification window or expired up to 90 days ago
+        if days_remaining <= doc_threshold_days and days_remaining >= -90:
+            client_name = doc.client.company_name if doc.client else "Sin cliente"
+            expiring.append({
+                "type": "document",
+                "id": doc.id,
+                "name": doc.name,
+                "client_name": client_name,
+                "client_id": doc.client_id,
+                "expiry_date": check_date.isoformat() if check_date else None,
+                "days_remaining": days_remaining,
+                "status": "expired" if days_remaining < 0 else ("critical" if days_remaining <= 7 else "expiring")
+            })
 
     return sorted(expiring, key=lambda x: x.get('days_remaining', 999))
 
